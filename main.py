@@ -41,6 +41,8 @@ class Order(object): # ORDER情報を扱うクラス
     self.e = e
     self.d = d
     self.q = q
+    self.lim = d - e #納期までの時間
+
 
 # 品目ごとの情報を扱うクラス
 # 他の情報で補えるのだが参照しやすいように
@@ -51,9 +53,27 @@ class Item(object):
     self.mlist = mlist # その品目を扱うことができるマシン番号
     self.gid = i%3 # グループid:これが同じだと工程依存が発生しない
 
-#役にたつかもしれない
-#def aa(self):
-#  print(self.M)
+# 回答
+class Log(object):
+  def __init__(self,m):
+    self.timeline = [[] for i in range(m)]
+
+
+def test(machine):
+  print(machine)
+  print(vars(machine[1]))
+
+
+#傾向を判断する
+#Bも判断してきちんとやりたい
+def check_trend(self):
+  if(self.A2 == max(self.A1,self.A2,self.A3)):
+    return 2
+  elif(self.A1 == max(self.A1,self.A3)):
+    return 1
+  else:
+    return 3
+
 
 def main(): #メイン関数
   
@@ -68,7 +88,6 @@ def main(): #メイン関数
     machine.append( Machine(j+1,c[j],d[j]) )
 
   #machineをcd値順にsortしておく
-  #のぞまいしマシンから優先的に探索しやすくなる
   machine.sort(key = lambda x:x.cd)
   
   bom = []
@@ -81,7 +100,7 @@ def main(): #メイン関数
     r,i,e,d,q = list(map(int,input().split()[1:]))
     order.append( Order(r,i,e,d,q) )
 
-  #orderを納期が遅い順にsort
+  #orderを納期までの期限が短い順にsort
   order.sort(key = lambda x:-x.d)
   
   # 入力値を整形して品目ごとにアクセスしやすくする
@@ -96,17 +115,46 @@ def main(): #メイン関数
   for j in range(par.I):
     item.append( Item(j+1,item_p[j],item_machine[j]) )
   
+  # 入力受付だいたいここまで
+
+  # 重視すべき要素を判断
+  trend = check_trend(par)
+
+  
+  # trendに合わせて配列をsortする
+  if(trend == 1): #段取り最適化重視
+    machine.sort(key = lambda x:(x.d,x.cd,x.c))
+    order.sort(key = lambda x:x.lim)
+    item.sort(key = lambda x:(x.p,len(x.mlist)))
+
+  elif(trend == 2): #納期遵守重視
+    machine.sort(key = lambda x:(x.cd,x.c,x.d))
+    order.sort(key = lambda x:(x.lim,-x.d))
+    item.sort(key = lambda x:len(x.mlist))
+
+  else: #着手遅延ボーナス最大化重視
+    machine.sort(key = lambda x:(x.c,x.cd,x.d))
+    order.sort(key = lambda x:(x.lim,-x.d))
+    item.sort(key = lambda x:len(x.mlist))
+
+
+  # スケジューリング結果をためておくクラス
+  log = Log(par.M)
+  # ここからスケジューリング
+  # scheduler(trend,machine,order,item,log)
+  test(machine)
+
   # 動作確認用のprint
-  print("machine")
+  print("****machine****")
   for j in machine:
     print(vars(j))
-  print("bom")
+  print("******bom******")
   for j in bom:
     print(vars(j))
-  print("order")
+  print("*****order*****")
   for j in order:
     print(vars(j))
-  print("item")
+  print("*****item******")
   for j in item:
     print(vars(j))
 
