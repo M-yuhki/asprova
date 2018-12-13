@@ -24,6 +24,8 @@ class Machine(object): # マシン情報を扱うクラス
     self.num = num
     self.c = c
     self.d = d
+    self.cd = c*d # CとDを双方評価した値
+    self.inum = [] # 取り扱える品目番号を加えておく
 
 
 class Bom(object): # BOM情報を扱うクラス
@@ -33,7 +35,6 @@ class Bom(object): # BOM情報を扱うクラス
     self.m = m
     self.t = t
       
-  # ORDERの入力受付
 class Order(object): # ORDER情報を扱うクラス
   def __init__(self,r,i,e,d,p):
     self.r = r
@@ -47,24 +48,45 @@ class Order(object): # ORDER情報を扱うクラス
 #  print(self.M)
 
 def main(): #メイン関数
-  par = Par() # 入力受付
-
   
-  machine = [[] for i in range(par.M)]
+  # パラメータの受け取り 
+  par = Par()
+
+  # マシンの番号と配列の番号は1ずれていることに注意
+  machine = [[] for j in range(par.M)]
   c = list(map(int,input().split()[1:]))
   d = list(map(int,input().split()[1:]))
-  for i in range(par.M):
-    machine[i] = Machine(i+1,c[i],d[i])
+  for j in range(par.M):
+    machine[j] = Machine(j+1,c[j],d[j])
 
-  bom = [[] for i in range(par.BL)]
+  bom = [[] for j in range(par.BL)]
   for j in range(par.BL):
     i,p,m,t = map(int,input().split()[1:])
     bom[j] = Bom(i,p,m,t)
 
-  order = [[] for i in range(par.R)]
+  order = [[] for j in range(par.R)]
   for j in range(par.R):
     r,i,e,d,p = list(map(int,input().split()[1:]))
     order[j] = Order(r,i,e,d,p)
+
+  # マシンごとに取り扱える品目を登録
+  for j in bom:
+    machine[j.m-1].inum.append(j.i)
+
+  # 品目ごとに工程の数を登録
+  # 品目の番号と配列の番号は1ずれていることに注意
+  step = [-1 for j in range(par.I)]
+  for j in bom:
+    if(step[j.i - 1] < j.p):
+      step[j.i - 1] = j.p
+
+  #machineをcd値順にsort
+  for j in machine:
+    print(vars(j))
+  machine.sort(key = lambda x:x.cd)
+  for j in machine:
+    print(vars(j))
+
 
 if __name__ == "__main__":
   main()
