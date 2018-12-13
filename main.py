@@ -25,7 +25,6 @@ class Machine(object): # マシン情報を扱うクラス
     self.c = c
     self.d = d
     self.cd = c*d # CとDを双方評価した値
-    self.inum = [] # 取り扱える品目番号を加えておく
 
 
 class Bom(object): # BOM情報を扱うクラス
@@ -36,12 +35,21 @@ class Bom(object): # BOM情報を扱うクラス
     self.t = t
       
 class Order(object): # ORDER情報を扱うクラス
-  def __init__(self,r,i,e,d,p):
+  def __init__(self,r,i,e,d,q):
     self.r = r
     self.i = i
     self.e = e
     self.d = d
-    self.p = p
+    self.q = q
+
+# 品目ごとの情報を扱うクラス
+# 他の情報で補えるのだが参照しやすいように
+class Item(object):
+  def __init__(self,i,p,mlist):
+    self.i = i
+    self.p = p # その品目の工程数
+    self.mlist = mlist # その品目を扱うことができるマシン番号
+    self.gid = i%3 # グループid:これが同じだと工程依存が発生しない
 
 #役にたつかもしれない
 #def aa(self):
@@ -53,40 +61,54 @@ def main(): #メイン関数
   par = Par()
 
   # マシンの番号と配列の番号は1ずれていることに注意
-  machine = [[] for j in range(par.M)]
+  machine = []
   c = list(map(int,input().split()[1:]))
   d = list(map(int,input().split()[1:]))
   for j in range(par.M):
-    machine[j] = Machine(j+1,c[j],d[j])
+    machine.append( Machine(j+1,c[j],d[j]) )
 
-  bom = [[] for j in range(par.BL)]
+  #machineをcd値順にsortしておく
+  #のぞまいしマシンから優先的に探索しやすくなる
+  machine.sort(key = lambda x:x.cd)
+  
+  bom = []
   for j in range(par.BL):
     i,p,m,t = map(int,input().split()[1:])
-    bom[j] = Bom(i,p,m,t)
+    bom.append(Bom(i,p,m,t))
 
-  order = [[] for j in range(par.R)]
+  order = []
   for j in range(par.R):
-    r,i,e,d,p = list(map(int,input().split()[1:]))
-    order[j] = Order(r,i,e,d,p)
+    r,i,e,d,q = list(map(int,input().split()[1:]))
+    order.append( Order(r,i,e,d,q) )
 
-  # マシンごとに取り扱える品目を登録
+  #orderを納期が遅い順にsort
+  order.sort(key = lambda x:-x.d)
+  
+  # 入力値を整形して品目ごとにアクセスしやすくする
+  item = []
+  item_p = [-1 for i in range(par.I)]
+  item_machine = [[] for i in range(par.I)]
   for j in bom:
-    machine[j.m-1].inum.append(j.i)
+    item_machine[j.i-1].append(j.m) # 対応するマシンの登録
+    if(j.p > item_p[j.i-1]): # マシンの工程数を更新
+      item_p[j.i-1] = j.p
 
-  # 品目ごとに工程の数を登録
-  # 品目の番号と配列の番号は1ずれていることに注意
-  step = [-1 for j in range(par.I)]
-  for j in bom:
-    if(step[j.i - 1] < j.p):
-      step[j.i - 1] = j.p
-
-  #machineをcd値順にsort
+  for j in range(par.I):
+    item.append( Item(j+1,item_p[j],item_machine[j]) )
+  
+  # 動作確認用のprint
+  print("machine")
   for j in machine:
     print(vars(j))
-  machine.sort(key = lambda x:x.cd)
-  for j in machine:
+  print("bom")
+  for j in bom:
     print(vars(j))
-
+  print("order")
+  for j in order:
+    print(vars(j))
+  print("item")
+  for j in item:
+    print(vars(j))
 
 if __name__ == "__main__":
   main()
