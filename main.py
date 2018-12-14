@@ -1,3 +1,5 @@
+#スケジューリングの時に割り当て時間を考慮できていない
+
 import copy
 import numpy as np
 
@@ -102,32 +104,39 @@ def select_job(trend,order,gnum):
   return p
 
 #スケジューリングアルゴリズムの部分
-def select_bom(par,bom,tar_order,mlog):
+def select_bom(par,machine,bom,tar_order,mlog):
   first = -1 # 最初に見つけたもの
   b = -1
   for j in range(par.BL):
-    # 取り扱えるマシンを抽出
+    # 取り扱えるBOMを抽出
     # sortしているのでとりあえず先頭から見る
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
-      if(first == -1):
-        first = j
+      print("Hit")
       
-      # 割り当て状況を確認
-      # mlogが空なら確定
+      if(first == -1):
+        tar_machine = machine[pick_machine(machine,bom[j].m)]
+        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
+          first = j
+
+      # 割り当て状況を確認し、ざっくりと時間を計算してジョブを割り当て可能か判定
+      # mlogが空
       if(len(mlog[bom[j].m]) == 0):
-        b =  j
+        tar_machine = machine[pick_machine(machine,bom[j].m)]
+        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c) >= tar_order.e):
+          b =  j
       # ざっくりと時間を計算して割り当てられるか判定
       else:
+        print("pena{}".format(abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d))
         mlog[bom[j].m].sort(key = lambda x:x.t1)
-        
-        if(mlog[bom[j].m][0].t1 -1 - (bom.t * tar_order.q * mlog[bom[j].m][0].c) - (abs((mlog_tl[0].i-tar_order.i)%3)*mlog[bom[j].m][0].d)  > 0):
+        tar_machine = machine[pick_machine(machine,bom[j].m)]
+        if(mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
 
-        #if(abs(mlog[bom[j].m][0].i-tar_order.i)%3):
           b = j
     
     if(b != -1):
       break
-  
+  print("b{} first{}".format(b,first))
+
   if(b != 1):
     return b
   else:
@@ -148,16 +157,24 @@ def batch_job(par,machine,bom,tar_order,mlog_tl):
   # m,r,p,t1,t2,t3
   
   gid = (tar_order.i)%3
+  pena = 0
 
-  # 実行
+  # 実行時間
   runtime = bom.t * tar_order.q * machine.c
 
   if(len(mlog_tl) == 0):
-    batch = Mlog(machine.m, tar_order.r, bom.p, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i) 
+    batch = Mlog(machine.m, tar_order.r, tar_order.prest, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i) 
   else:
     mlog_tl.sort(key = lambda x:x.t1)
-    pena = abs((mlog_tl[0].i-tar_order.i)%3)*machine.d
-    batch = Mlog(machine.m, tar_order.r, bom.p, mlog_tl[0].t1 -1 -runtime - pena,mlog_tl[0].t1 - 1 - runtime , mlog_tl[0].t1 - 1,  tar_order.i)
+    pena = abs(mlog_tl[0].i-tar_order.i)%3*machine.d
+    batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i)
+    
+    # 後のジョブに割り当て時間を書き込む
+    mlog_tl[0].t1 -= pena    
+
+  # orderのdrestを更新
+  tar_order.drest -= (pena + runtime)
+
 
   return batch
 
@@ -178,14 +195,18 @@ def scheduler(trend,par,machine,bom,order,item):
     # 品目番号tar_order.i,工程tar_order.prest
     
     # 使用するBOM/割り当てるマシンを選択
-    tar_bom = bom[select_bom(par,bom,tar_order,mlog)]
+    tar_bom = bom[select_bom(par,machine,bom,tar_order,mlog)]
     tar_machine = machine[pick_machine(machine,tar_bom.m)]
-    
+
+
+    print("r:{}  p:{}".format(tar_order.r,tar_order.prest))
+        
     # マシンに割り当て
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
     
 
     mlog[tar_machine.m].append(result)
+
 
     par.OL += 1
 
@@ -196,6 +217,7 @@ def scheduler(trend,par,machine,bom,order,item):
 
 
   return mlog
+
 
 
 def main(): #メイン関数
@@ -265,13 +287,29 @@ def main(): #メイン関数
     order.sort(key = lambda x:(x.lim,-x.d))
     item.sort(key = lambda x:len(x.mlist))
 
-
+  
   # ここからスケジューリング
   result = scheduler(trend,par,machine,bom,order,item)
 
+  # 頭が出る場合、調整
+  """
+  max_over = 0
+  for j in result:
+    if(len(j) > 0):
+      j.sort(key = lambda x:x.t1)
+      over = j[0].t1
+      if(over < max_over):
+        max_over = over
+  
+  if(max_over < 0):
+    for s in result:
+      for t in s:
+        t.t1 -= max_over
+        t.t2 -= max_over
+        t.t3 -= max_over
+  """
 
   # 最終的な出力
-
   print(par.OL)
   for s in result:
     for t in s:
