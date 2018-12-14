@@ -42,6 +42,7 @@ class Order(object): # ORDER情報を扱うクラス
     self.d = d
     self.q = q
     self.lim = d - e #納期までの時間
+    self.prest = -1# そのオーダの残り工程数 (i,prest)で工程特定可能
 
 
 # 品目ごとの情報を扱うクラス
@@ -53,10 +54,18 @@ class Item(object):
     self.mlist = mlist # その品目を扱うことができるマシン番号
     self.gid = i%3 # グループid:これが同じだと工程依存が発生しない
 
+# マシンの割り当て状況
+class Mlog(object):
+  def __init__(self,start,end,gid):
+    self.start = start
+    self.end = end
+    self.gid = gid
+
 # 回答
 class Log(object):
-  def __init__(self,m):
-    self.timeline = [[] for i in range(m)]
+  def __init__(self):
+    self.m = -1
+
 
 
 def test(machine):
@@ -73,6 +82,77 @@ def check_trend(self):
     return 1
   else:
     return 3
+
+
+#スケジュールの対象とするジョブを選択する
+#今は単純な判定だがgnumとかをちゃんと使う
+def select_job(trend,order,gnum):
+  p = -1
+  j = 999999
+  for i in range(len(order)):
+    if(order[i].lim < j):
+      p = i
+      j = order[i].lim
+  return p
+
+#スケジューリングアルゴリズムの部分
+def select_machine(par,bom,tar_order,mlog):
+  first = -1 # 最初に見つけたもの
+  b = -1
+  for j in range(par.BL):
+    # 取り扱えるマシンを抽出
+    # sortしているのでとりあえず先頭から見る
+    if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
+      if(first == -1):
+        first = bom[j].m
+      
+      # 割り当て状況を確認
+      # mlogが空なら確定
+      if(len(mlog[bom[j].m]) == 0):
+        b =  bom[j].m
+      # mlogが空である場合,gidが同じなら確定
+      else:
+        mlog[bom[j].m].sort(key = lambda x:x[0])
+        if(mlog[bom[j].m][0].gid):
+          b = bom[j].m
+    
+    if(b != -1):
+      break
+  
+  if(b != 1):
+    return b
+  else:
+    return first 
+    
+
+def scheduler(trend,par,machine,bom,order,item):
+  mlog = [[] for i in range(par.M + 1)] # マシンの割り当て状況 0は空列
+  gnum = -1 # 直前に選択したジョブのグループ
+  while True:
+    # スケジュールの対象とするジョブを選択
+    a = select_job(trend,order,gnum)
+    tar_order = order[a]
+    
+    # 作る品目と工程
+    # 品目番号tar_order.i,工程tar_order.prest
+    
+    # 割り当てるマシンを選択
+    b = select_machine(par,bom,tar_order,mlog)
+    
+    print("i:{} p:{} b:{}".format(tar_order.i,tar_order.prest,b))
+     
+    tar_order.prest -= 1
+
+    if(tar_order.prest == 0):
+      order.pop(a)
+    
+    if(len(order) == 0):
+      break
+
+
+    # 使えるマシンの中から割り当てるものを選択
+    #b = select_machine
+
 
 
 def main(): #メイン関数
@@ -115,6 +195,11 @@ def main(): #メイン関数
   for j in range(par.I):
     item.append( Item(j+1,item_p[j],item_machine[j]) )
   
+  # itemを元にprestを登録
+  for j in order:
+    j.prest = item[j.i - 1].p
+
+  
   # 入力受付だいたいここまで
 
   # 重視すべき要素を判断
@@ -138,11 +223,8 @@ def main(): #メイン関数
     item.sort(key = lambda x:len(x.mlist))
 
 
-  # スケジューリング結果をためておくクラス
-  log = Log(par.M)
   # ここからスケジューリング
-  # scheduler(trend,machine,order,item,log)
-  test(machine)
+  scheduler(trend,par,machine,bom,order,item)
 
   # 動作確認用のprint
   print("****machine****")
