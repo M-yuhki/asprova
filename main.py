@@ -57,10 +57,15 @@ class Item(object):
 
 # マシンの割り当て状況
 class Mlog(object):
-  def __init__(self,start,end,gid):
-    self.start = start
-    self.end = end
-    self.gid = gid
+  def __init__(self,m,r,p,t1,t2,t3,i):
+    self.m = m
+    self.r = r
+    self.p = p
+    self.t1 = t1
+    self.t2 = t2
+    self.t3 = t3
+    self.i = i #品目番号を登録しておく 
+    self.gid = i%3
 
 # 回答
 class Log(object):
@@ -111,10 +116,10 @@ def select_bom(par,bom,tar_order,mlog):
       # mlogが空なら確定
       if(len(mlog[bom[j].m]) == 0):
         b =  j
-      # mlogが空である場合,gidが同じなら確定
+      # すでに割り当てられているジョブと段取り時間が発生しない組み合わせなら確定
       else:
-        mlog[bom[j].m].sort(key = lambda x:x.start)
-        if(mlog[bom[j].m][0].gid == tar_order.i%3):
+        mlog[bom[j].m].sort(key = lambda x:x.t1)
+        if(abs(mlog[bom[j].m][0].i-tar_order.i)%3):
           b = j
     
     if(b != -1):
@@ -136,10 +141,21 @@ def pick_machine(machine,m):
     
 def batch_job(par,machine,bom,tar_order,mlog_tl):
   # mlog_tl はそのマシンの配列
+  
+  # m,r,p,t1,t2,t3
+  
+  gid = (tar_order.i)%3
+
+  # 実行
+  runtime = bom.t * tar_order.q * machine.c
+
   if(len(mlog_tl) == 0):
-    batch = Mlog(tar_order.drest-(bom.t * tar_order.q * machine.c),tar_order.drest,(tar_order.i)%3) 
+    batch = Mlog(machine.m, tar_order.r, bom.p, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i) 
   else:
-    batch = Mlog(-1,-1,-1)
+    mlog_tl.sort(key = lambda x:x.t1)
+    pena = abs((mlog_tl[0].i-tar_order.i)%3)*machine.d
+    batch = Mlog(machine.m, tar_order.r, bom.p, mlog_tl[0].t1 -1 -runtime - pena,mlog_tl[0].t1 - 1 - runtime , mlog_tl[0].t1 - 1,  tar_order.i)
+
   return batch
 
 
