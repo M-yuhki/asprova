@@ -20,8 +20,8 @@ class Par: # 入力値や各種パラメータを扱うクラス
 
 
 class Machine(object): # マシン情報を扱うクラス
-  def __init__(self,num,c,d):
-    self.num = num
+  def __init__(self,m,c,d):
+    self.m = m
     self.c = c
     self.d = d
     self.cd = c*d # CとDを双方評価した値
@@ -43,6 +43,7 @@ class Order(object): # ORDER情報を扱うクラス
     self.q = q
     self.lim = d - e #納期までの時間
     self.prest = -1# そのオーダの残り工程数 (i,prest)で工程特定可能
+    self.drest = d # すでに割り当てたプロセスを差し引いた納期
 
 
 # 品目ごとの情報を扱うクラス
@@ -96,7 +97,7 @@ def select_job(trend,order,gnum):
   return p
 
 #スケジューリングアルゴリズムの部分
-def select_machine(par,bom,tar_order,mlog):
+def select_bom(par,bom,tar_order,mlog):
   first = -1 # 最初に見つけたもの
   b = -1
   for j in range(par.BL):
@@ -104,17 +105,17 @@ def select_machine(par,bom,tar_order,mlog):
     # sortしているのでとりあえず先頭から見る
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
       if(first == -1):
-        first = bom[j].m
+        first = j
       
       # 割り当て状況を確認
       # mlogが空なら確定
       if(len(mlog[bom[j].m]) == 0):
-        b =  bom[j].m
+        b =  j
       # mlogが空である場合,gidが同じなら確定
       else:
-        mlog[bom[j].m].sort(key = lambda x:x[0])
-        if(mlog[bom[j].m][0].gid):
-          b = bom[j].m
+        mlog[bom[j].m].sort(key = lambda x:x.start)
+        if(mlog[bom[j].m][0].gid == tar_order.i%3):
+          b = j
     
     if(b != -1):
       break
@@ -123,7 +124,24 @@ def select_machine(par,bom,tar_order,mlog):
     return b
   else:
     return first 
+
+  
+
+def pick_machine(machine,m):
+  for j in range(len(machine)):
+    if(machine[j].m == m):
+      return j
+  return -1
+
     
+def batch_job(par,machine,bom,tar_order,mlog_tl):
+  # mlog_tl はそのマシンの配列
+  if(len(mlog_tl) == 0):
+    batch = Mlog(tar_order.drest-(bom.t * tar_order.q * machine.c),tar_order.drest,(tar_order.i)%3) 
+  else:
+    batch = Mlog(-1,-1,-1)
+  return batch
+
 
 def scheduler(trend,par,machine,bom,order,item):
   mlog = [[] for i in range(par.M + 1)] # マシンの割り当て状況 0は空列
@@ -136,17 +154,26 @@ def scheduler(trend,par,machine,bom,order,item):
     # 作る品目と工程
     # 品目番号tar_order.i,工程tar_order.prest
     
-    # 割り当てるマシンを選択
-    b = select_machine(par,bom,tar_order,mlog)
+    # 使用するBOM/割り当てるマシンを選択
+    tar_bom = bom[select_bom(par,bom,tar_order,mlog)]
+    tar_machine = machine[pick_machine(machine,tar_bom.m)]
     
-    print("i:{} p:{} b:{}".format(tar_order.i,tar_order.prest,b))
-     
+    # マシンに割り当て
+    result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
+    
+    mlog[tar_machine.m].append(result)
+
     tar_order.prest -= 1
 
     if(tar_order.prest == 0):
       order.pop(a)
     
     if(len(order) == 0):
+
+      for s in mlog:
+        for t in s:
+          print(vars(t))
+
       break
 
 
