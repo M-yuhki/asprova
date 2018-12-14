@@ -4,7 +4,7 @@ import numpy as np
 class Par: # 入力値や各種パラメータを扱うクラス
   # 入力値以外のパラメータ
   trend = -1 # スケジューリングの時の指向
-
+  OL = 0 # 最終出力用の割り当ての数
 
   # ヘッダパラメータの入力受付
   def input_header(self):
@@ -165,6 +165,10 @@ def scheduler(trend,par,machine,bom,order,item):
   while True:
     # スケジュールの対象とするジョブを選択
     a = select_job(trend,order,gnum)
+    
+    if(a == -1): # a = -1はジョブがないこと意味する
+      break
+    
     tar_order = order[a]
     
     # 作る品目と工程
@@ -177,25 +181,18 @@ def scheduler(trend,par,machine,bom,order,item):
     # マシンに割り当て
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
     
+
     mlog[tar_machine.m].append(result)
+
+    par.OL += 1
 
     tar_order.prest -= 1
 
     if(tar_order.prest == 0):
       order.pop(a)
-    
-    if(len(order) == 0):
-
-      for s in mlog:
-        for t in s:
-          print(vars(t))
-
-      break
 
 
-    # 使えるマシンの中から割り当てるものを選択
-    #b = select_machine
-
+  return mlog
 
 
 def main(): #メイン関数
@@ -267,21 +264,32 @@ def main(): #メイン関数
 
 
   # ここからスケジューリング
-  scheduler(trend,par,machine,bom,order,item)
+  result = scheduler(trend,par,machine,bom,order,item)
 
+
+  # 最終的な出力
+
+  print(par.OL)
+  for s in result:
+    for t in s:
+      print("{} {} {} {} {} {}".format(t.m,t.r,t.p,t.t1,t.t2,t.t3))
+
+
+  
   # 動作確認用のprint
-  print("****machine****")
-  for j in machine:
-    print(vars(j))
-  print("******bom******")
-  for j in bom:
-    print(vars(j))
-  print("*****order*****")
-  for j in order:
-    print(vars(j))
-  print("*****item******")
-  for j in item:
-    print(vars(j))
+  #print("****machine****")
+  #for j in machine:
+  #  print(vars(j))
+  #print("******bom******")
+  #for j in bom:
+  #  print(vars(j))
+  #print("*****order*****")
+  #for j in order:
+  #  print(vars(j))
+  #print("*****item******")
+  #for j in item:
+  #  print(vars(j))
+
 
 if __name__ == "__main__":
   main()
