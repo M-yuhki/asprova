@@ -116,10 +116,13 @@ def select_bom(par,bom,tar_order,mlog):
       # mlogが空なら確定
       if(len(mlog[bom[j].m]) == 0):
         b =  j
-      # すでに割り当てられているジョブと段取り時間が発生しない組み合わせなら確定
+      # ざっくりと時間を計算して割り当てられるか判定
       else:
         mlog[bom[j].m].sort(key = lambda x:x.t1)
-        if(abs(mlog[bom[j].m][0].i-tar_order.i)%3):
+        
+        if(mlog[bom[j].m][0].t1 -1 - (bom.t * tar_order.q * mlog[bom[j].m][0].c) - (abs((mlog_tl[0].i-tar_order.i)%3)*mlog[bom[j].m][0].d)  > 0):
+
+        #if(abs(mlog[bom[j].m][0].i-tar_order.i)%3):
           b = j
     
     if(b != -1):
