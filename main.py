@@ -164,79 +164,81 @@ def pick_machine(machine,m):
       return j
   return -1
 
-    
-def batch_job(par,machine,bom,tar_order,mlog_tl):
-  # mlog_tl はそのマシンの配列
+# 処理結果を登録するための関数
+# 割り当ての計算のところがselect_bomと被ってるから整理できそう  
+def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシンの配列
   
-  # m,r,p,t1,t2,t3
-  
-  gid = (tar_order.i)%3
-  pena = 0
+  # 段取り時間 
+  dantime = 0 
 
   # 実行時間
   runtime = bom.t * tar_order.q * machine.c
 
-  if(len(mlog_tl) == 0):
+  if(len(mlog_tl) == 0): # そのマシンに1つもスケジュールされていない場合
     batch = Mlog(machine.m, tar_order.r, tar_order.prest, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i) 
-  else:
-    mlog_tl.sort(key = lambda x:x.t1)
-    pena = abs(mlog_tl[0].i-tar_order.i)%3*machine.d
+
+  else: # 1つ以上スケジュールされている場合
+    mlog_tl.sort(key = lambda x:x.t1) # スケジューリング結果をソート
+    dantime = abs(mlog_tl[0].i-tar_order.i)%3*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
     batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i)
-    
-    # 後のジョブに割り当て時間を書き込む
-    mlog_tl[0].t1 -= pena    
+   
+    # 後のジョブに割り当て時間を反映させる
+    # 現状のプログラムだと後ろからスケジューリングしているため 
+    mlog_tl[0].t1 -= dantime
 
-  # orderのdrestを更新
-  tar_order.drest -= (pena + runtime)
+  # 対象としたオーダのdrestを更新
+  tar_order.drest -= (dantime + runtime)
 
-
+  # Mlogクラスを返す
   return batch
 
 
+# スケジューラの操作をまとめた関数
 def scheduler(trend,par,machine,bom,order,item):
-  mlog = [[] for i in range(par.M + 1)] # マシンの割り当て状況 0は空列
-  gnum = -1 # 直前に選択したジョブのグループ
+  # マシンごとの割り当て状況を保持する関数
+  # indexとマシン番号を揃えるため、0は空列
+  mlog = [[] for i in range(par.M + 1)]
+  gnum = -1 # 直前に選択したオーダで取り扱った品目のグループ
+
   while True:
-    # スケジュールの対象とするジョブを選択
+   
+    # スケジュールの対象とするオーダを選択
     a = select_job(trend,order,gnum)
-    
-    if(a == -1): # a = -1はジョブがないこと意味する
+   
+    if(a == -1): # オーダが全て処理されていればループを抜ける
       break
     
     tar_order = order[a]
-    
-    # 作る品目と工程
-    # 品目番号tar_order.i,工程tar_order.prest
-    
-    # 使用するBOM/割り当てるマシンを選択
+
+    # 使用するBOMおよび割り当てるマシンを選択
     tar_bom = bom[select_bom(par,machine,bom,tar_order,mlog)]
     tar_machine = machine[pick_machine(machine,tar_bom.m)]
 
 
     print("r:{}  p:{}".format(tar_order.r,tar_order.prest))
         
-    # マシンに割り当て
+    # マシンに割り当ててlogを登録
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
-    
-
     mlog[tar_machine.m].append(result)
 
-
+    # 最終出力用の処理数を更新
     par.OL += 1
 
+    # そのオーダの残り工程数を更新
     tar_order.prest -= 1
 
+    # 残り工程数が0になったオーダを消去
     if(tar_order.prest == 0):
       order.pop(a)
 
-
+  # 割り当て結果を返す
   return mlog
 
 
-
-def main(): #メイン関数
+# メイン関数
+def main():
   
-  # パラメータの受け取り 
+  # ここからパラメータの受け取り 
   par = Par()
 
   # マシンの番号と配列の番号は1ずれていることに注意
@@ -259,7 +261,7 @@ def main(): #メイン関数
     r,i,e,d,q = list(map(int,input().split()[1:]))
     order.append( Order(r,i,e,d,q) )
 
-  #orderを納期までの期限が短い順にsort
+  #orderを納期までの期限が短い順にsortしておく
   order.sort(key = lambda x:-x.d)
   
   # 入力値を整形して品目ごとにアクセスしやすくする
@@ -284,7 +286,6 @@ def main(): #メイン関数
   # 重視すべき要素を判断
   trend = check_trend(par)
 
-  
   # trendに合わせて配列をsortする
   if(trend == 1): #段取り最適化重視
     machine.sort(key = lambda x:(x.d,x.cd,x.c))
@@ -332,19 +333,20 @@ def main(): #メイン関数
 
   
   # 動作確認用のprint
-  #print("****machine****")
-  #for j in machine:
-  #  print(vars(j))
-  #print("******bom******")
-  #for j in bom:
-  #  print(vars(j))
-  #print("*****order*****")
-  #for j in order:
-  #  print(vars(j))
-  #print("*****item******")
-  #for j in item:
-  #  print(vars(j))
-
+  """
+  print("****machine****")
+  for j in machine:
+    print(vars(j))
+  print("******bom******")
+  for j in bom:
+    print(vars(j))
+  print("*****order*****")
+  for j in order:
+    print(vars(j))
+  print("*****item******")
+  for j in item:
+    print(vars(j))
+  """
 
 if __name__ == "__main__":
   main()
