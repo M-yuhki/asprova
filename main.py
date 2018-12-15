@@ -1,9 +1,11 @@
 #スケジューリングの時に割り当て時間を考慮できていない
+# 117あたりの処理がおかしい
 
 import copy
 import numpy as np
 
-class Par: # 入力値や各種パラメータを扱うクラス
+# 基本パラメータや一部の追加パラメータを扱うクラス
+class Par:
   # 入力値以外のパラメータ
   trend = -1 # スケジューリングの時の指向
   OL = 0 # 最終出力用の割り当ての数
@@ -20,8 +22,8 @@ class Par: # 入力値や各種パラメータを扱うクラス
     self.input_header()
     self.input_eva()
 
-
-class Machine(object): # マシン情報を扱うクラス
+# マシンに関する情報を扱うクラス
+class Machine(object):
   def __init__(self,m,c,d):
     self.m = m
     self.c = c
@@ -29,35 +31,39 @@ class Machine(object): # マシン情報を扱うクラス
     self.cd = c*d # CとDを双方評価した値
 
 
-class Bom(object): # BOM情報を扱うクラス
+# BOM情報を扱うクラス
+class Bom(object):
   def __init__(self,i,p,m,t):
     self.i = i
     self.p = p
     self.m = m
     self.t = t
-      
-class Order(object): # ORDER情報を扱うクラス
+
+# ORDER情報を扱うクラス
+class Order(object):
   def __init__(self,r,i,e,d,q):
     self.r = r
     self.i = i
     self.e = e
     self.d = d
     self.q = q
-    self.lim = d - e #納期までの時間
-    self.prest = -1# そのオーダの残り工程数 (i,prest)で工程特定可能
-    self.drest = d # すでに割り当てたプロセスを差し引いた納期
+    self.lim = d - e # 納期までの時間
+    self.prest = -1 # このオーダにおける残りの工程数
+    self.drest = d  # すでに割り当てた工程分の時間を差し引いた納期
 
 
 # 品目ごとの情報を扱うクラス
-# 他の情報で補えるのだが参照しやすいように
+# 他の情報で補えるが、参照を容易にするために作成
 class Item(object):
   def __init__(self,i,p,mlist):
     self.i = i
-    self.p = p # その品目の工程数
-    self.mlist = mlist # その品目を扱うことができるマシン番号
-    self.gid = i%3 # グループid:これが同じだと工程依存が発生しない
+    self.p = p # この品目の工程数
+    self.mlist = mlist # この品目を扱うことができるマシンの番号
+    self.gid = i%3 # グループID:この値が同じなら別品目間でも割り当て時間が発生しない
 
-# マシンの割り当て状況
+
+# 各マシンに割り当てた結果を扱うクラス
+# これが最終的な出力につながる
 class Mlog(object):
   def __init__(self,m,r,p,t1,t2,t3,i):
     self.m = m
@@ -66,23 +72,12 @@ class Mlog(object):
     self.t1 = t1
     self.t2 = t2
     self.t3 = t3
-    self.i = i #品目番号を登録しておく 
-    self.gid = i%3
-
-# 回答
-class Log(object):
-  def __init__(self):
-    self.m = -1
+    self.i = i # 品目番号を登録しておく 
+    self.gid = i%3 # グループID
 
 
-
-def test(machine):
-  print(machine)
-  print(vars(machine[1]))
-
-
-#傾向を判断する
-#Bも判断してきちんとやりたい
+# 初期パラメータから、スケジューリングで重視すべき傾向を決定する関数
+# Bも判断してきちんとやりたい
 def check_trend(self):
   if(self.A2 == max(self.A1,self.A2,self.A3)):
     return 2
@@ -92,8 +87,9 @@ def check_trend(self):
     return 3
 
 
-#スケジュールの対象とするジョブを選択する
-#今は単純な判定だがgnumとかをちゃんと使う
+# スケジュールの対象とするオーダを選択する関数
+# 現在は納期までの時間が短いジョブを優先して選んでいる
+# 今は単純な判定だがgnumとかをちゃんと使いたい
 def select_job(trend,order,gnum):
   p = -1
   j = 999999
@@ -103,47 +99,65 @@ def select_job(trend,order,gnum):
       j = order[i].lim
   return p
 
-#スケジューリングアルゴリズムの部分
+
+# 選択したオーダに対して使用するBOMを選択する関数
 def select_bom(par,machine,bom,tar_order,mlog):
-  first = -1 # 最初に見つけたもの
-  b = -1
+  
+  first = -1 # 最初に見つけた条件に合うBOMのindex
+  b = -1 # 望ましいBOMのindex
+  
+  # 全てのBOMを探索する
   for j in range(par.BL):
-    # 取り扱えるBOMを抽出
-    # sortしているのでとりあえず先頭から見る
+
+    # 品目番号と工程番号から、対象とするオーダを処理できるBOMを選択
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
       print("Hit")
       
+
+      # 最初に見つけた条件を満たすBOMを登録しておく
+      # ここの計算おかしいな？？割り当てられたか判定きちんとできてないよね！直そう！
       if(first == -1):
-        tar_machine = machine[pick_machine(machine,bom[j].m)]
+        tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
         if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
           first = j
 
-      # 割り当て状況を確認し、ざっくりと時間を計算してジョブを割り当て可能か判定
-      # mlogが空
-      if(len(mlog[bom[j].m]) == 0):
+      # BOMで使用するマシンの割り当て状況によって分離
+      # mlog: 各マシンへの割り当て状況が登録してある配列
+      if(len(mlog[bom[j].m]) == 0): # 対象とするマシンにこれまでに1つもスケジュールされていない場合
         tar_machine = machine[pick_machine(machine,bom[j].m)]
+
+        # 最も遅く割り当てた時に処理開始可能時間の条件を満たすか判定
         if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c) >= tar_order.e):
           b =  j
-      # ざっくりと時間を計算して割り当てられるか判定
-      else:
+
+      else: # 1つ以上スケジュールされた形跡がある場合
+
         print("pena{}".format(abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d))
-        mlog[bom[j].m].sort(key = lambda x:x.t1)
+        
+        mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
         tar_machine = machine[pick_machine(machine,bom[j].m)]
+
+        # (直後の段取り開始時間 - 1 - 対処としたBOMの実行時間 - 段取り時間) で今回の段取り開始予定時間を計算し、これが最早開始時間よりはやまらないか判定
         if(mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
 
           b = j
     
+    # 条件を満たすBOMが見つかったらすぐ抜ける
+    # sortしてあるから先頭のBOMはより望ましいもの
+    # ここの判定は変更の余地あり
     if(b != -1):
       break
   print("b{} first{}".format(b,first))
 
-  if(b != 1):
+
+  # 使用するBOMのindexを返却
+  if(b != 1): # 望ましい結果があれば返す
     return b
-  else:
+  else: # なければfirstを返す
     return first 
 
-  
 
+# マシンの番号からそのマシンの配列のindexを返す関数
 def pick_machine(machine,m):
   for j in range(len(machine)):
     if(machine[j].m == m):
