@@ -111,7 +111,6 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
     # 品目番号と工程番号から、対象とするオーダを処理できるBOMを選択
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
-      print("Hit")
       
 
       # 最初に見つけた条件を満たすBOMを登録しておく
@@ -132,7 +131,6 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
       else: # 1つ以上スケジュールされた形跡がある場合
 
-        print("pena{}".format(abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d))
         
         mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
         tar_machine = machine[pick_machine(machine,bom[j].m)]
@@ -147,7 +145,6 @@ def select_bom(par,machine,bom,tar_order,mlog):
     # ここの判定は変更の余地あり
     if(b != -1):
       break
-  print("b{} first{}".format(b,first))
 
 
   # 使用するBOMのindexを返却
@@ -214,9 +211,6 @@ def scheduler(trend,par,machine,bom,order,item):
     tar_bom = bom[select_bom(par,machine,bom,tar_order,mlog)]
     tar_machine = machine[pick_machine(machine,tar_bom.m)]
 
-
-    print("r:{}  p:{}".format(tar_order.r,tar_order.prest))
-        
     # マシンに割り当ててlogを登録
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
     mlog[tar_machine.m].append(result)
