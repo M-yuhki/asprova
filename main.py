@@ -111,35 +111,32 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
     # 品目番号と工程番号から、対象とするオーダを処理できるBOMを選択
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
-      
-
       # 最初に見つけた条件を満たすBOMを登録しておく
       # ここの計算おかしいな？？割り当てられたか判定きちんとできてないよね！直そう！
-      if(first == -1):
-        tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
-        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
-          first = j
+      #if(first == -1):
+      #  tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
+      #  if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
+      #    first = j
+      
+      # そのBOMに対応するマシン
+      tar_machine = machine[pick_machine(machine,bom[j].m)]
 
       # BOMで使用するマシンの割り当て状況によって分離
       # mlog: 各マシンへの割り当て状況が登録してある配列
       if(len(mlog[bom[j].m]) == 0): # 対象とするマシンにこれまでに1つもスケジュールされていない場合
-        tar_machine = machine[pick_machine(machine,bom[j].m)]
 
         # 最も遅く割り当てた時に処理開始可能時間の条件を満たすか判定
         if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c) >= tar_order.e):
           b =  j
 
       else: # 1つ以上スケジュールされた形跡がある場合
-
-        
         mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
-        tar_machine = machine[pick_machine(machine,bom[j].m)]
-
         # (直後の段取り開始時間 - 1 - 対処としたBOMの実行時間 - 段取り時間) で今回の段取り開始予定時間を計算し、これが最早開始時間よりはやまらないか判定
         if(mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
 
           b = j
-    
+   
+
     # 条件を満たすBOMが見つかったらすぐ抜ける
     # sortしてあるから先頭のBOMはより望ましいもの
     # ここの判定は変更の余地あり
@@ -148,7 +145,7 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
 
   # 使用するBOMのindexを返却
-  if(b != 1): # 望ましい結果があれば返す
+  if(b != -1): # 望ましい結果があれば返す
     return b
   else: # なければfirstを返す
     return first 
