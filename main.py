@@ -1,5 +1,6 @@
 #スケジューリングの時に割り当て時間を考慮できていない
 # 117あたりの処理がおかしい
+# algorithm
 
 import copy
 import numpy as np
