@@ -51,7 +51,7 @@ class Order(object):
     self.lim = d - e # 納期までの時間
     self.prest = -1 # このオーダにおける残りの工程数
     self.drest = d  # すでに割り当てた工程分の時間を差し引いた納期
-
+    self.dflg = True # 直前の工程の段取り時間が確定しているか否か
 
 # 品目ごとの情報を扱うクラス
 # 他の情報で補えるが、参照を容易にするために作成
@@ -66,7 +66,7 @@ class Item(object):
 # 各マシンに割り当てた結果を扱うクラス
 # これが最終的な出力につながる
 class Mlog(object):
-  def __init__(self,m,r,p,t1,t2,t3,i):
+  def __init__(self,m,r,p,t1,t2,t3,i,order):
     self.m = m
     self.r = r
     self.p = p
@@ -75,6 +75,7 @@ class Mlog(object):
     self.t3 = t3
     self.i = i # 品目番号を登録しておく 
     self.gid = i%3 # グループID
+    self.order = order # オーダそのもの
 
 
 # 初期パラメータから、スケジューリングで重視すべき傾向を決定する関数
@@ -91,13 +92,24 @@ def check_trend(self):
 # スケジュールの対象とするオーダを選択する関数
 # 現在は納期までの時間が短いジョブを優先して選んでいる
 # 今は単純な判定だがgnumとかをちゃんと使いたい
+# dflgを判定に使用し、直後の工程の段取り時間が確定しているものを優先して割り当て
 def select_job(trend,order,gnum):
   p = -1
   j = 999999
+  flg = False
   for i in range(len(order)):
     if(order[i].lim < j):
-      p = i
-      j = order[i].lim
+      if(p == -1): # とりあえず先頭のジョブを選んでおく
+        p = i
+        j = order[i].lim
+      if(order[i].dflg): # dflg==True, すなわち段取り時間が確定していたら優先的に
+        p = i 
+        j = order[i].lim
+        flg = True
+    
+    if(flg):
+      break
+  
   return p
 
 
@@ -114,10 +126,11 @@ def select_bom(par,machine,bom,tar_order,mlog):
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
       # 最初に見つけた条件を満たすBOMを登録しておく
       # ここの計算おかしいな？？割り当てられたか判定きちんとできてないよね！直そう！
-      #if(first == -1):
-      #  tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
-      #  if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
-      #    first = j
+      # オーダ内の各工程が別マシンに割り当てられた時の段取り時間が考慮できていない
+      if(first == -1):
+        tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
+        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
+          first = j
       
       # そのBOMに対応するマシン
       tar_machine = machine[pick_machine(machine,bom[j].m)]
@@ -133,7 +146,7 @@ def select_bom(par,machine,bom,tar_order,mlog):
       else: # 1つ以上スケジュールされた形跡がある場合
         mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
         # (直後の段取り開始時間 - 1 - 対処としたBOMの実行時間 - 段取り時間) で今回の段取り開始予定時間を計算し、これが最早開始時間よりはやまらないか判定
-        if(mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
+        if( mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
 
           b = j
    
@@ -147,8 +160,10 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
   # 使用するBOMのindexを返却
   if(b != -1): # 望ましい結果があれば返す
+    print("found")
     return b
   else: # なければfirstを返す
+    print("not found")
     return first 
 
 
@@ -170,16 +185,21 @@ def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシン�
   runtime = bom.t * tar_order.q * machine.c
 
   if(len(mlog_tl) == 0): # そのマシンに1つもスケジュールされていない場合
-    batch = Mlog(machine.m, tar_order.r, tar_order.prest, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i) 
+    batch = Mlog(machine.m, tar_order.r, tar_order.prest, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i, tar_order) 
 
   else: # 1つ以上スケジュールされている場合
     mlog_tl.sort(key = lambda x:x.t1) # スケジューリング結果をソート
     dantime = abs(mlog_tl[0].i-tar_order.i)%3*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
-    batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i)
-   
-    # 後のジョブに割り当て時間を反映させる
+    batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i, tar_order)
+    
+    # 今割り当てたオーダのdflgをFalseにしておく
+    tar_order.dflg = False
+
+
+    # 後のジョブに割り当て時間を反映させ、dflgを更新
     # 現状のプログラムだと後ろからスケジューリングしているため 
     mlog_tl[0].t1 -= dantime
+    mlog_tl[0].order.dflg = True
 
   # 対象としたオーダのdrestを更新
   tar_order.drest -= (dantime + runtime)
@@ -299,7 +319,7 @@ def main():
   result = scheduler(trend,par,machine,bom,order,item)
 
   # 頭が出る場合、調整
-  """
+  
   max_over = 0
   for j in result:
     if(len(j) > 0):
@@ -314,7 +334,7 @@ def main():
         t.t1 -= max_over
         t.t2 -= max_over
         t.t3 -= max_over
-  """
+  
 
   # 最終的な出力
   print(par.OL)
