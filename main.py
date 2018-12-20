@@ -94,10 +94,11 @@ def check_trend(self):
 # 今は単純な判定だがgnumとかをちゃんと使いたい
 # dflgを判定に使用し、直後の工程の段取り時間が確定しているものを優先して割り当て
 def select_job(trend,order,gnum):
-  p = -1
+  p = 0
   j = 999999
   flg = False
   for i in range(len(order)):
+    """
     if(order[i].lim < j):
       if(p == -1): # とりあえず先頭のジョブを選んでおく
         p = i
@@ -109,7 +110,12 @@ def select_job(trend,order,gnum):
     
     if(flg):
       break
-  
+    """
+    if(order[i].dflg):
+      if(order[i].lim<j):
+        p = i
+        j = order[i].lim
+  print(p)
   return p
 
 
@@ -127,14 +133,12 @@ def select_bom(par,machine,bom,tar_order,mlog):
       # 最初に見つけた条件を満たすBOMを登録しておく
       # ここの計算おかしいな？？割り当てられたか判定きちんとできてないよね！直そう！
       # オーダ内の各工程が別マシンに割り当てられた時の段取り時間が考慮できていない
+      
       if(first == -1):
-        tar_machine = machine[pick_machine(machine,bom[j].m)] # そのBOMで使用するマシンを選択
-        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c)  >= tar_order.e):
-          first = j
+        first = j
       
       # そのBOMに対応するマシン
       tar_machine = machine[pick_machine(machine,bom[j].m)]
-
       # BOMで使用するマシンの割り当て状況によって分離
       # mlog: 各マシンへの割り当て状況が登録してある配列
       if(len(mlog[bom[j].m]) == 0): # 対象とするマシンにこれまでに1つもスケジュールされていない場合
@@ -192,17 +196,14 @@ def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシン�
     dantime = abs(mlog_tl[0].i-tar_order.i)%3*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
     batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i, tar_order)
     
-    # 今割り当てたオーダのdflgをFalseにしておく
-    tar_order.dflg = False
-
-
     # 後のジョブに割り当て時間を反映させ、dflgを更新
     # 現状のプログラムだと後ろからスケジューリングしているため 
     mlog_tl[0].t1 -= dantime
     mlog_tl[0].order.dflg = True
 
-  # 対象としたオーダのdrestを更新
+  # 対象としたオーダのdrestとdflgを更新
   tar_order.drest -= (dantime + runtime)
+  tar_order.dflg = False
 
   # Mlogクラスを返す
   return batch
@@ -217,12 +218,13 @@ def scheduler(trend,par,machine,bom,order,item):
 
   while True:
    
+    # オーダが全て処理されていればループを抜ける
+    if(len(order) == 0):
+      break
+
     # スケジュールの対象とするオーダを選択
     a = select_job(trend,order,gnum)
    
-    if(a == -1): # オーダが全て処理されていればループを抜ける
-      break
-    
     tar_order = order[a]
 
     # 使用するBOMおよび割り当てるマシンを選択
