@@ -1,6 +1,6 @@
 # スケジューリングの時に割り当て時間を考慮できていない
 # 117あたりの処理がおかしい
-# algorithm
+# 頭の調整をきちんとする　今は0しか見ていないが、各ジョブの最早時間を見る
 
 import copy
 import numpy as np
@@ -115,27 +115,28 @@ def select_job(trend,order,gnum):
       if(order[i].lim<j):
         p = i
         j = order[i].lim
-  print(p)
   return p
 
 
 # 選択したオーダに対して使用するBOMを選択する関数
 def select_bom(par,machine,bom,tar_order,mlog):
   
-  first = -1 # 最初に見つけた条件に合うBOMのindex
+  hit = [] # 条件に合うBOMのindex
   b = -1 # 望ましいBOMのindex
   
   # 全てのBOMを探索する
   for j in range(par.BL):
-
     # 品目番号と工程番号から、対象とするオーダを処理できるBOMを選択
     if(tar_order.i == bom[j].i and tar_order.prest == bom[j].p):
       # 最初に見つけた条件を満たすBOMを登録しておく
-      # ここの計算おかしいな？？割り当てられたか判定きちんとできてないよね！直そう！
       # オーダ内の各工程が別マシンに割り当てられた時の段取り時間が考慮できていない
       
-      if(first == -1):
-        first = j
+      
+      # とりあえず
+      hit.append(j)
+
+      #if(first == -1):
+      #  first = j
       
       # そのBOMに対応するマシン
       tar_machine = machine[pick_machine(machine,bom[j].m)]
@@ -144,13 +145,13 @@ def select_bom(par,machine,bom,tar_order,mlog):
       if(len(mlog[bom[j].m]) == 0): # 対象とするマシンにこれまでに1つもスケジュールされていない場合
 
         # 最も遅く割り当てた時に処理開始可能時間の条件を満たすか判定
-        if(tar_order.drest -  (bom[j].t * tar_order.q * tar_machine.c) >= tar_order.e):
+        if(tar_order.drest - (bom[j].t * tar_order.q * tar_machine.c) >= tar_order.e):
           b =  j
 
       else: # 1つ以上スケジュールされた形跡がある場合
         mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
         # (直後の段取り開始時間 - 1 - 対処としたBOMの実行時間 - 段取り時間) で今回の段取り開始予定時間を計算し、これが最早開始時間よりはやまらないか判定
-        if( mlog[bom[j].m][0].t1 - 1 - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
+        if( min(mlog[bom[j].m][0].t1 -1 ,tar_order.drest) - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
 
           b = j
    
@@ -164,11 +165,15 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
   # 使用するBOMのindexを返却
   if(b != -1): # 望ましい結果があれば返す
-    print("found")
+    print("found {}".format(vars(bom[b])))
     return b
-  else: # なければfirstを返す
-    print("not found")
-    return first 
+  else: # なければhitから割り当てが少ないマシンを選ぶ
+    min_batch = 99
+    for j in hit:
+      if(len(mlog[bom[j].m]) < min_batch):
+        min_batch = len(mlog[bom[j].m])
+        b = j
+    return b 
 
 
 # マシンの番号からそのマシンの配列のindexを返す関数
@@ -189,20 +194,23 @@ def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシン�
   runtime = bom.t * tar_order.q * machine.c
 
   if(len(mlog_tl) == 0): # そのマシンに1つもスケジュールされていない場合
+    basetime = tar_order.drest
     batch = Mlog(machine.m, tar_order.r, tar_order.prest, tar_order.drest-runtime, tar_order.drest-runtime, tar_order.drest, tar_order.i, tar_order) 
 
   else: # 1つ以上スケジュールされている場合
     mlog_tl.sort(key = lambda x:x.t1) # スケジューリング結果をソート
+    basetime = min(mlog_tl[0].t1 -1 , tar_order.drest)
     dantime = abs(mlog_tl[0].i-tar_order.i)%3*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
-    batch = Mlog(machine.m, tar_order.r, tar_order.prest, mlog_tl[0].t1 -1 -runtime, mlog_tl[0].t1 -1  - runtime , mlog_tl[0].t1 -1 ,  tar_order.i, tar_order)
+    batch = Mlog(machine.m, tar_order.r, tar_order.prest, basetime -runtime, basetime - runtime ,  basetime,  tar_order.i, tar_order)
     
     # 後のジョブに割り当て時間を反映させ、dflgを更新
     # 現状のプログラムだと後ろからスケジューリングしているため 
     mlog_tl[0].t1 -= dantime
+    mlog_tl[0].order.drest -= dantime
     mlog_tl[0].order.dflg = True
 
   # 対象としたオーダのdrestとdflgを更新
-  tar_order.drest -= (dantime + runtime)
+  tar_order.drest = basetime-runtime -1
   tar_order.dflg = False
 
   # Mlogクラスを返す
@@ -233,6 +241,8 @@ def scheduler(trend,par,machine,bom,order,item):
 
     # マシンに割り当ててlogを登録
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
+    print(vars(result))
+    print(vars(result.order))
     mlog[tar_machine.m].append(result)
 
     # 最終出力用の処理数を更新
@@ -321,7 +331,7 @@ def main():
   result = scheduler(trend,par,machine,bom,order,item)
 
   # 頭が出る場合、調整
-  
+  # 頭の調整をきちんとする
   max_over = 0
   for j in result:
     if(len(j) > 0):
@@ -336,7 +346,6 @@ def main():
         t.t1 -= max_over
         t.t2 -= max_over
         t.t3 -= max_over
-  
 
   # 最終的な出力
   print(par.OL)
