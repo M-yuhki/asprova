@@ -165,7 +165,6 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
   # 使用するBOMのindexを返却
   if(b != -1): # 望ましい結果があれば返す
-    print("found {}".format(vars(bom[b])))
     return b
   else: # なければhitから割り当てが少ないマシンを選ぶ
     min_batch = 99
@@ -241,8 +240,6 @@ def scheduler(trend,par,machine,bom,order,item):
 
     # マシンに割り当ててlogを登録
     result =  batch_job(par,tar_machine,tar_bom,tar_order,mlog[tar_machine.m])
-    print(vars(result))
-    print(vars(result.order))
     mlog[tar_machine.m].append(result)
 
     # 最終出力用の処理数を更新
@@ -258,6 +255,31 @@ def scheduler(trend,par,machine,bom,order,item):
   # 割り当て結果を返す
   return mlog
 
+
+def adjust_time(result):
+
+  # 頭の調整をきちんとする
+  max_over = 0
+  for j in result:
+    for k in j:
+      over = k.order.e - k.t1
+      if(k.p == 1 and over > max_over):
+        max_over = over
+
+    #if(len(j) > 0):
+    #  j.sort(key = lambda x:x.t1)
+    #  over = j[0].t1
+    #  if(over < max_over):
+    #    max_over = over
+
+  if(max_over > 0):
+    for j in result:
+      for k in j:
+        k.t1 += max_over
+        k.t2 += max_over
+        k.t3 += max_over
+
+  return result
 
 # メイン関数
 def main():
@@ -330,23 +352,9 @@ def main():
   # ここからスケジューリング
   result = scheduler(trend,par,machine,bom,order,item)
 
-  # 頭が出る場合、調整
-  # 頭の調整をきちんとする
-  max_over = 0
-  for j in result:
-    if(len(j) > 0):
-      j.sort(key = lambda x:x.t1)
-      over = j[0].t1
-      if(over < max_over):
-        max_over = over
+  # 実行開始時刻が最早開始時刻を超えていたら調整
+  result = adjust_time(result)
   
-  if(max_over < 0):
-    for s in result:
-      for t in s:
-        t.t1 -= max_over
-        t.t2 -= max_over
-        t.t3 -= max_over
-
   # 最終的な出力
   print(par.OL)
   for s in result:
