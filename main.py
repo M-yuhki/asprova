@@ -2,9 +2,6 @@
 # 117あたりの処理がおかしい
 # 頭の調整をきちんとする　今は0しか見ていないが、各ジョブの最早時間を見る
 
-import copy
-import numpy as np
-
 # 基本パラメータや一部の追加パラメータを扱うクラス
 class Par:
   # 入力値以外のパラメータ
@@ -90,12 +87,12 @@ def check_trend(self):
 
 
 # スケジュールの対象とするオーダを選択する関数
-# 現在は納期までの時間が短いジョブを優先して選んでいる
+# 現在は納期が遅いオーダを優先して選んでいる
 # 今は単純な判定だがgnumとかをちゃんと使いたい
 # dflgを判定に使用し、直後の工程の段取り時間が確定しているものを優先して割り当て
 def select_job(trend,order,gnum):
   p = 0
-  j = 999999
+  j = -1
   flg = False
   for i in range(len(order)):
     """
@@ -112,9 +109,9 @@ def select_job(trend,order,gnum):
       break
     """
     if(order[i].dflg):
-      if(order[i].lim<j):
+      if(order[i].drest>j):
         p = i
-        j = order[i].lim
+        j = order[i].drest
   return p
 
 
@@ -150,8 +147,8 @@ def select_bom(par,machine,bom,tar_order,mlog):
 
       else: # 1つ以上スケジュールされた形跡がある場合
         mlog[bom[j].m].sort(key = lambda x:x.t1) # そのマシンのログを段取り開始時間順で昇順にソート
-        # (直後の段取り開始時間 - 1 - 対処としたBOMの実行時間 - 段取り時間) で今回の段取り開始予定時間を計算し、これが最早開始時間よりはやまらないか判定
-        if( min(mlog[bom[j].m][0].t1 -1 ,tar_order.drest) - (bom[j].t * tar_order.q * tar_machine.c) - (abs(mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)  >= tar_order.e):
+        dantime = abs((mlog[bom[j].m][0].i-tar_order.i)%3*tar_machine.d)
+        if( min(mlog[bom[j].m][0].t1 -dantime,tar_order.drest) - (bom[j].t * tar_order.q * tar_machine.c) - dantime  >= tar_order.e):
 
           b = j
    
@@ -166,6 +163,7 @@ def select_bom(par,machine,bom,tar_order,mlog):
   # 使用するBOMのindexを返却
   if(b != -1): # 望ましい結果があれば返す
     return b
+    
   else: # なければhitから割り当てが少ないマシンを選ぶ
     min_batch = 99
     for j in hit:
@@ -198,8 +196,8 @@ def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシン�
 
   else: # 1つ以上スケジュールされている場合
     mlog_tl.sort(key = lambda x:x.t1) # スケジューリング結果をソート
-    basetime = min(mlog_tl[0].t1 -1 , tar_order.drest)
-    dantime = abs(mlog_tl[0].i-tar_order.i)%3*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
+    dantime = (abs(mlog_tl[0].i-tar_order.i)%3)*machine.d #直後の割り当て（mlog_tl[0]）を元に段取り時間を計算
+    basetime = min(mlog_tl[0].t1-dantime , tar_order.drest)
     batch = Mlog(machine.m, tar_order.r, tar_order.prest, basetime -runtime, basetime - runtime ,  basetime,  tar_order.i, tar_order)
     
     # 後のジョブに割り当て時間を反映させ、dflgを更新
@@ -209,7 +207,7 @@ def batch_job(par,machine,bom,tar_order,mlog_tl): # mlog_tl はそのマシン�
     mlog_tl[0].order.dflg = True
 
   # 対象としたオーダのdrestとdflgを更新
-  tar_order.drest = basetime-runtime -1
+  tar_order.drest = basetime-runtime
   tar_order.dflg = False
 
   # Mlogクラスを返す
@@ -233,6 +231,8 @@ def scheduler(trend,par,machine,bom,order,item):
     a = select_job(trend,order,gnum)
    
     tar_order = order[a]
+
+    print("target {}".format(vars(tar_order)))
 
     # 使用するBOMおよび割り当てるマシンを選択
     tar_bom = bom[select_bom(par,machine,bom,tar_order,mlog)]
