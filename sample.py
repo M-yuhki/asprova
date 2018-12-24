@@ -143,8 +143,8 @@ class Asprova2:
         # 各注文の各工程の製造終了時刻 : Manufacturing end time of each process of each order 
         t3rp = [[-1 for p in range(self.iToP[self.orders[r].i])] for r in range(self.R)]
 
-        # 注文を最早開始時刻が早い順に並べ替える : Sort orders by earliest start time
-        self.orders = sorted(self.orders, key=attrgetter('e', 'r'))
+        # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
+        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
 
         for j in range(self.R):
             order = self.orders[j]
