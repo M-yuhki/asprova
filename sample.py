@@ -65,7 +65,8 @@ class Operation:
         self.order = order
         # 依存関係が発生するopeの情報を登録しておく
         # そのマシンの直後のオーダと、自分の次の工程
-        self.depend = []
+        self.depend_before = []
+        self.depend_after = []
 
 class Asprova2:
     def __init__(self):
@@ -98,6 +99,9 @@ class Asprova2:
         self.boms = []
         self.orders = []
         self.operations = []
+        
+        # スケジューリングで重視する傾向
+        self.Trend = -1
 
     def readProblem(self):
         n = 0
@@ -153,6 +157,19 @@ class Asprova2:
         self.P = 0;
         for i in range(self.I):
             self.P = max(self.P, self.iToP[i]);
+            
+        # シミュレーションの際に考慮する傾向
+        # 遅延のおよその平均値を100000としておく
+        ave_delay = 100000
+        AB1 = self.A1*pow(ave_delay,self.B1)
+        AB2 = self.A2*pow(ave_delay,self.B2)
+        AB3 = self.A3*pow(ave_delay,self.B3)
+        if(AB2 == max(AB1,AB2,AB3)):
+            self.Trend = 2 # 遅延解消傾向
+        elif(AB1 == max(AB1,AB3)):
+            self.Trend = 1 # ペナルティ解消傾向
+        else:
+            self.Trend = 3 # ボーナス最大化傾向
 
     def time(self, m, i, p):
         for bom in self.boms:
@@ -201,13 +218,7 @@ class Asprova2:
             if(order.prest == -1): # prestが0のオーダは完了済みなので割り付けない
                 continue
         
-            if(order.dflg): # dflgがTrueのものから優先的に使用
-                return order
-        
-        # dflgが全てFalseならprestが0でない先頭のorderを使用
-        for order in self.orders:
-            if(order.prest != -1):
-                return order
+            return order # 残りの納期がもっとも遅いオーダから割り当てる
     
     def searchOpe(self,r,p):
         
@@ -230,9 +241,6 @@ class Asprova2:
         mToNumorder = [0 for m in range(self.M)]
         
         
-        # チェック用の配列
-        checkOrder = [[] for r in range(self.R)]
-        
         # 工程の総数
         ol = 0
         for i in t3rp:
@@ -245,6 +253,7 @@ class Asprova2:
         
         # BOMをsortする
         # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
+        """
         if(self.A1 == max(self.A1,self.A2,self.A3)):
             self.boms = sorted(self.boms, key = attrgetter("d","cd","c"))
         # それ以外の場合はcdを優先し、第二項目は平均が大きい項目を考慮
@@ -254,7 +263,13 @@ class Asprova2:
             else:
                 sortkey = "d"
             self.boms = sorted(self.boms, key = attrgetter("cd",sortkey))
-
+        """
+        # Trendを元にsort
+        if(self.Trend == 1):
+            self.boms = sorted(self.boms, key = attrgetter("d","c"))
+        else:
+            self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
             # selectOrder関数を新たに作成
@@ -319,19 +334,17 @@ class Asprova2:
                 
                 # 依存関係の登録
                 # そのマシンの次のオーダ
-                ope.depend.append(mToPreviousOpe[m])
+                ope.depend_after.append(mToPreviousOpe[m])
             
             # 依存関係の登録
             # その品目の次の工程
             if(order.prest != order.p):
-                ope.depend.append(self.searchOpe(r,order.prest+1))
+                ope.depend_after.append(self.searchOpe(r,order.prest+1))
             
             
             # NumOrderの更新
             mToNumorder[m] += 1
-            
-            #動作確認用
-            checkOrder[order.r].append(ope)
+
             
             # 対象としたオーダのdrestとdflgを更新
             order.drest = t1
@@ -391,7 +404,7 @@ class Asprova2:
                 ope.t1 += over
                 ope.t2 += over
                 ope.t3 += over
-                for j in ope.depend:
+                for j in ope.depend_after:
                     self.checkOver(j,ope.t3)
         
         else: # 最初の工程でなけれ依存関係のあるt3から判断
@@ -400,31 +413,89 @@ class Asprova2:
                 ope.t1 += over
                 ope.t2 += over
                 ope.t3 += over
-                for j in ope.depend:
+                for j in ope.depend_after:
                     self.checkOver(j,ope.t3)
         return True
+    
+    # オーバした遅延を解消する関数
+    def adjustDelay(self,ope,time):
+        # timeは、解消したい遅延時間
+        # 早めることができるtimeの時間を更新
+        if(ope.p == 0):
+            time = min(time, ope.t1 - ope.order.e)
         
+        for before in ope.depend_before:
+            time = min(time, ope.t1 - before.t3)
+        if(time < 0):
+            time = 0
+        
+        """    
+        # 最後の工程にたどり着くまで再帰的に呼び出す    
+        if(ope.order.p != ope.p):
+            for after in ope.depend_after:
+                if(after.r == ope.r):
+                    time = self.adjustDelay(after,time) # 同じオーダについて再帰的に呼び出す
+        """    
+        ope.t1 -= time
+        ope.t2 -= time
+        ope.t3 -= time
+        return time 
+            
     
     def checkResult(self): #依存関係を元に時間を調整する
     
+        # 各オーダの「これだけ早くできる」を登録
+        stend = [-1 for i in range(self.R)]
+        
         # 工程順にsort
         # こうすることによって2工程目以降のcheckの必要がなくなる
         self.operations = sorted(self.operations, key= attrgetter("p","r"))
         for ope in self.operations:
-            # 実質的な操作はcheckDepend関数で対応
+            # まずはbefore方向の依存関係を登録しておく
+            for j in ope.depend_after:
+                j.depend_before.append(ope)
+            
+            # 実質的な操作はcheckOver関数で対応
+            # 最早開始時間に対して頭が出ている場合、下げる
             self.checkOver(ope,0)
-
+            
+        for ope in self.operations:
+            if(ope.p == 0):
+                stend[ope.r] = ope.t1 - ope.order.e
+            if(ope.order.p == ope.p):
+                stend[ope.r] = stend[ope.r] - (ope.t3 - ope.order.d)
+        # 遅延によるペナルティが割り当てのボーナスを上回る場合、遅延の解消を試みる
+        #if(self.A2 >= self.A3):
+        if(True):
+            self.operations = sorted(self.operations, key = attrgetter("p"),reverse = True)
+            while True: #解消できる限り解消を試みる
+                maxtime = 0 # そのターンでもっとも短縮できた時間
+                for ope in self.operations:
+                    if(ope.p != 0 and stend[ope.r] > 0):
+                        time = self.adjustDelay(ope,stend[ope.r])
+                        if(time != 0):
+                            maxtime = max(maxtime,time) 
+                if(maxtime == 0): # そのターンで少しも短縮できなければループを出る
+                    break
+                            
+            
+        
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-            #for j in operation.depend:
-            #    print("r {}/p {}".format(j.r,j.p))
-                
 
+        """ 
+        print("********")
+        k = 0
+        for operation in self.operations:
+            if(operation.order.p == operation.p):
+                print(operation.t3 - operation.order.d)
+        """
+        
     def run(self):
         self.readProblem()
         self.solve()
@@ -434,3 +505,4 @@ class Asprova2:
 if __name__ == '__main__':
     asprova2 = Asprova2()
     asprova2.run()
+
