@@ -166,22 +166,30 @@ class Asprova2:
                 return True
         return False
     
-    def selectMachine(self,i,p,num):
+    def selectMachine(self,i,p,num,ope):
         
         minm = -1
         minnum = 99999999999
+        
+        minm2 = -1
+        minnum2 = 99999999999
         
         # BOMを順番に見ていく
         for bom in self.boms:
             if (bom.i == i and bom.p == p): # 対応できるBOMである
                 if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなければ確定
                     return bom.m
-                elif(num[bom.m] < minnum): # 割り当てられている場合、なるべく少ないマシンを選択
+                elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
                     minnum = num[bom.m]
                     minm = bom.m
+                elif(num[bom.m] < minnum):
+                    minnum2 = num[bom.m]
+                    minm2 = bom.m
         
-        return minm
-        
+        if(minm != -1):
+            return minm
+        else:
+            return minm2
     
     def selectOrder(self):
         
@@ -267,7 +275,7 @@ class Asprova2:
             # マシンごとに見ていくのではなく、すべてのマシンを総当たりして
             # 望ましいマシンを探す
             
-            m = self.selectMachine(i,prest,mToNumorder)
+            m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
             
             if m == -1:
                 continue
@@ -376,7 +384,7 @@ class Asprova2:
                 t3rp[r][p] = t3
         """
     
-    def checkDepend(self,ope,pret3):
+    def checkOver(self,ope,pret3):
         if(ope.p == 0): # そのオーダの最初の工程なら最早時間も考慮する
             if(ope.t1 < ope.order.e or ope.t1 < pret3):# 段取り開始時刻が最早時間よりも早い
                 over = max(ope.order.e - ope.t1, pret3 - ope.t1)
@@ -384,7 +392,7 @@ class Asprova2:
                 ope.t2 += over
                 ope.t3 += over
                 for j in ope.depend:
-                    self.checkDepend(j,ope.t3)
+                    self.checkOver(j,ope.t3)
         
         else: # 最初の工程でなけれ依存関係のあるt3から判断
             if(ope.t1 < pret3):
@@ -393,7 +401,7 @@ class Asprova2:
                 ope.t2 += over
                 ope.t3 += over
                 for j in ope.depend:
-                    self.checkDepend(j,ope.t3)
+                    self.checkOver(j,ope.t3)
         return True
         
     
@@ -404,27 +412,22 @@ class Asprova2:
         self.operations = sorted(self.operations, key= attrgetter("p","r"))
         for ope in self.operations:
             # 実質的な操作はcheckDepend関数で対応
-            self.checkDepend(ope,0)
-                
-                
-        
-        
+            self.checkOver(ope,0)
 
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("r","p"))
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #for j in operation.depend:
             #    print("r {}/p {}".format(j.r,j.p))
-            
+                
 
     def run(self):
         self.readProblem()
         self.solve()
-        self.writeSolution()
         self.checkResult()
         self.writeSolution()
 
