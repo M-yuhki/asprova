@@ -26,6 +26,8 @@ class Order:
         self.prest = -1
         # 既に割り当てた工数分の時間を差し引いた納期
         self.drest = d
+        # 順方向割り当て用
+        self.erest = e
         # 直前の工程の段取り時間が確定しているか否か
         self.dflg = True
 
@@ -187,28 +189,38 @@ class Asprova2:
     
     def selectMachine(self,i,p,num,ope):
         
-        minm = -1
-        minnum = 99999999999
+        minm1 = -1
+        minnum1 = 99999999999
         
         minm2 = -1
         minnum2 = 99999999999
         
+        minm3 = -1
+        minnum3 = 99999999999
+
         # BOMを順番に見ていく
         for bom in self.boms:
             if (bom.i == i and bom.p == p): # 対応できるBOMである
                 if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなければ確定
                     return bom.m
-                elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
-                    minnum = num[bom.m]
-                    minm = bom.m
-                elif(num[bom.m] < minnum):
+                elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum1): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                    minnum1 = num[bom.m]
+                    minm1 = bom.m
+                    
+                elif(abs(i - ope[bom.m].i)%3 == 1 and  num[bom.m] < minnum2):
                     minnum2 = num[bom.m]
                     minm2 = bom.m
+                    
+                elif(num[bom.m] < minnum3):
+                    minnum3 = num[bom.m]
+                    minm3 = bom.m
         
-        if(minm != -1):
-            return minm
-        else:
+        if(minm1 != -1):
+            return minm1
+        elif(minm2 != -1):
             return minm2
+        else:
+            return minm3
     
     def selectOrder(self):
         
@@ -243,6 +255,7 @@ class Asprova2:
         # 各設備の直後の製造開始時刻 : Previous manufacturing end time of each machine
         #mToPreviousT3 = [0 for m in range(self.M)]
         mToPreviousT1 = [0 for m in range(self.M)]
+        mToPreviousT3 = [0 for m in range(self.M)]
         # 各設備の直後の品目: Previous item of each machine
         mToPreviousI = [-1 for m in range(self.M)]
         # 各設備の直後のジョブを参照するために登録
@@ -290,8 +303,10 @@ class Asprova2:
             e = order.e;
             d = order.d;
             q = order.q;
+            p = order.p;
             prest = order.prest;
             drest = order.drest;
+            erest = order.erest;
             
             #選ばれた注文の最後の工程から設備と時間を割り付けていく
             # 利用可能な設備を見つける
@@ -299,7 +314,62 @@ class Asprova2:
             
             # マシンごとに見ていくのではなく、すべてのマシンを総当たりして
             # 望ましいマシンを探す
+            """
+            # 前から探す場合ここから
+            m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
             
+            if m == -1:
+                continue
+
+            # 段取り開始時刻は、｛この注文の最早開始時刻、この工程の前の工程の製造終了時刻、この設備の前回の製造終了時刻｝の最大値
+    	    # Setup start time is max number of { Earliest start time of this order,
+         	#                                  	  Manufacturing end time of the operation of previous process,
+            #                                     Manufacturing end time of last assigend operation to this machine }
+            if(mToPreviousI[m] == -1):
+                t1 = order.erest
+                t2 = t1
+            else:
+                t1 = max(erest, t3rp[r][p - 1] if p - 1 >= 0 else 0,  mToPreviousT3[m])
+                t2 = t1 + self.D[m] * (abs(i - mToPreviousI[m]) % 3)
+            
+            t3 = t2 + self.C[m] * self.time(m, i, (p-prest)) * q
+
+            ope = Operation(m, r, (p-prest), t1, t2, t3, i, order)
+            self.operations.append(ope)
+            
+            # 依存関係の登録
+            # その品目の次の工程
+            if((p - prest) != 0):
+                x = self.searchOpe(r,(p - prest - 1))
+                x.depend_after.append(ope)
+            if(mToPreviousI[m] != -1):
+                mToPreviousOpe[m].depend_after.append(ope)
+
+            # NumOrderの更新
+            mToNumorder[m] += 1
+
+            
+            # 対象としたオーダのdrestとdflgを更新
+            order.erest = t3
+            order.prest -= 1
+            
+            # Previous系のパラメータを更新
+            mToPreviousT3[m] = t3
+            t3rp[r][p] = t3
+            mToPreviousI[m] = i
+            mToPreviousOpe[m] = ope
+            
+
+            # olを更新して、ループから抜ける判定
+            
+            ol -= 1
+            if(ol == 0):
+                break
+            
+            # 前から探す場合ここまで
+            
+            """
+            # 後ろからわりつける場合はここから
             m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
             
             if m == -1:
@@ -362,6 +432,8 @@ class Asprova2:
             ol -= 1
             if(ol == 0):
                 break
+            # 後ろから探す場合ここまで
+            
         
         #print(checkOrder)
      
@@ -417,7 +489,7 @@ class Asprova2:
                     self.checkOver(j,ope.t3)
         return True
     
-    # オーバした遅延を解消する関数
+    # オーバーした遅延を解消する関数
     def adjustDelay(self,ope,time):
         # timeは、解消したい遅延時間
         # 早めることができるtimeの時間を更新
@@ -458,12 +530,32 @@ class Asprova2:
             # 実質的な操作はcheckOver関数で対応
             # 最早開始時間に対して頭が出ている場合、下げる
             self.checkOver(ope,0)
-            
+        
+        # stendを更新する    
         for ope in self.operations:
             if(ope.p == 0):
-                stend[ope.r] = ope.t1 - ope.order.e
+                stend[ope.r] = ope.t1 - ope.order.e # そのオーダを前に動かせるだけの時間
             if(ope.order.p == ope.p):
-                stend[ope.r] = stend[ope.r] - (ope.t3 - ope.order.d)
+                # (ope.t3 - ope.order.d)は、遅延している時間
+                # そのためstendの値は"遅延を解消するために動かせる値の限界値"である
+                # 負の値を示すなら遅延は発生していない
+                stend[ope.r] = min(stend[ope.r],(ope.t3 - ope.order.d))
+        
+        # とにかく工程を前に前に詰めるようにしてみる
+        
+        self.operations = sorted(self.operations, key = attrgetter("p"),reverse = True)
+        while True: #解消できる限り解消を試みる
+            maxtime = 0 # そのターンでもっとも短縮できた時間
+            for ope in self.operations:
+                if(ope.p != 0):
+                    time = self.adjustDelay(ope,9999999)
+                    if(time != 0):
+                        maxtime = max(maxtime,time) 
+            if(maxtime == 0): # そのターンで少しも短縮できなければループを出る
+                break
+        
+        
+        """        
         # 遅延によるペナルティが割り当てのボーナスを上回る場合、遅延の解消を試みる
         #if(self.A2 >= self.A3):
         if(True):
@@ -477,13 +569,14 @@ class Asprova2:
                             maxtime = max(maxtime,time) 
                 if(maxtime == 0): # そのターンで少しも短縮できなければループを出る
                     break
-                            
+        """                    
             
         
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("r","p"))
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
@@ -495,8 +588,14 @@ class Asprova2:
             if(operation.p == 0):
                 k += max(0, operation.t1 - operation.order.e)
         print(k)
-        """
         
+        print("********")
+        k = 0
+        for operation in self.operations:
+            if(operation.order.p == operation.p):
+                k += max(0, operation.t3 - operation.order.d)
+        print(k)
+        """
 
     def run(self):
         self.readProblem()
