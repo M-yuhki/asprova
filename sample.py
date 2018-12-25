@@ -20,6 +20,8 @@ class Order:
         self.q=q
         # 納期までの時間
         self.lim = d - e
+        # このオーダの工数
+        self.p = -1
         # このオーダにおける残り工数
         self.prest = -1
         # 既に割り当てた工数分の時間を差し引いた納期
@@ -62,6 +64,7 @@ class Operation:
         # オーダそのもの
         self.order = order
         # 依存関係が発生するopeの情報を登録しておく
+        # そのマシンの直後のオーダと、自分の次の工程
         self.depend = []
 
 class Asprova2:
@@ -142,8 +145,9 @@ class Asprova2:
         for bom in self.boms:
             self.iToP[bom.i] = max(self.iToP[bom.i], bom.p + 1)
         
-        # ORDER毎の残り工程数を登録しておく
+        # ORDER毎に工程数を登録しておく
         for i in range(self.R):
+            self.orders[i].p = self.iToP[self.orders[i].i] -1
             self.orders[i].prest = self.iToP[self.orders[i].i] -1
         
         self.P = 0;
@@ -203,16 +207,6 @@ class Asprova2:
             if(operation.r == r and operation.p == p):
                 return operation
     
-    def checkDepend(self,ope):
-        
-        for tar in ope.depend:
-            diff = tar.t3 - ope.t1
-            if(diff > 0):
-                tar.t1 += diff
-                tar.t2 += diff
-                tar.t3 += diff
-                checkDepend(tar)
-                
 
     def solve(self):
         # 各設備の直後の製造開始時刻 : Previous manufacturing end time of each machine
@@ -242,11 +236,16 @@ class Asprova2:
         self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
         
         # BOMをsortする
-        # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合のみ順序入れ替え
+        # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
         if(self.A1 == max(self.A1,self.A2,self.A3)):
-            self.boms = sorted(self.boms, key = attrgetter("d"))
+            self.boms = sorted(self.boms, key = attrgetter("d","cd","c"))
+        # それ以外の場合はcdを優先し、第二項目は平均が大きい項目を考慮
         else:
-            self.boms = sorted(self.boms, key = attrgetter("cd"))
+            if(sum(self.C) >= sum(self.D) ):
+                sortkey = "c"
+            else:
+                sortkey = "d"
+            self.boms = sorted(self.boms, key = attrgetter("cd",sortkey))
 
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
@@ -310,24 +309,20 @@ class Asprova2:
                 mToPreviousOpe[m].order.drest  -= dantime # drestから段取り時間を引く
                 mToPreviousOpe[m].order.dflg = True # dflgをTrueにする
                 
-                # 再帰的に依存関係を探索して、問題があれば対応するopeの結果を変更
-                self.checkDepend(mToPreviousOpe[m])
-                
-                mToPreviousOpe[m].depend.append(ope) # 依存関係を登録しておく
+                # 依存関係の登録
+                # そのマシンの次のオーダ
+                ope.depend.append(mToPreviousOpe[m])
             
-            # もしdflg = Falseの状態で割り当てを行なっていたのなら
-            # Trueになった際に変化する可能性があるので
-            # 依存関係を追加
-            if(order.dflg == False):
-
-                tarope = self.searchOpe(r,order.prest + 1)
-                tarope.depend.append(ope)
-
+            # 依存関係の登録
+            # その品目の次の工程
+            if(order.prest != order.p):
+                ope.depend.append(self.searchOpe(r,order.prest+1))
             
             
             # NumOrderの更新
             mToNumorder[m] += 1
             
+            #動作確認用
             checkOrder[order.r].append(ope)
             
             # 対象としたオーダのdrestとdflgを更新
@@ -380,34 +375,56 @@ class Asprova2:
                 mToPreviousT3[m] = t3
                 t3rp[r][p] = t3
         """
-            
-    def checkResult(self): #最早時間を超えているものを調整する
-        max_over = 0
-        for operation in self.operations:
-            over = operation.order.e - operation.t1
-            if(over > max_over):
-                max_over = over
+    
+    def checkDepend(self,ope,pret3):
+        if(ope.p == 0): # そのオーダの最初の工程なら最早時間も考慮する
+            if(ope.t1 < ope.order.e or ope.t1 < pret3):# 段取り開始時刻が最早時間よりも早い
+                over = max(ope.order.e - ope.t1, pret3 - ope.t1)
+                ope.t1 += over
+                ope.t2 += over
+                ope.t3 += over
+                for j in ope.depend:
+                    self.checkDepend(j,ope.t3)
         
-        if(max_over > 0):
-            for operation in self.operations:
-                operation.t1 += max_over
-                operation.t2 += max_over
-                operation.t3 += max_over
+        else: # 最初の工程でなけれ依存関係のあるt3から判断
+            if(ope.t1 < pret3):
+                over = pret3 - ope.t1
+                ope.t1 += over
+                ope.t2 += over
+                ope.t3 += over
+                for j in ope.depend:
+                    self.checkDepend(j,ope.t3)
+        return True
+        
+    
+    def checkResult(self): #依存関係を元に時間を調整する
+    
+        # 工程順にsort
+        # こうすることによって2工程目以降のcheckの必要がなくなる
+        self.operations = sorted(self.operations, key= attrgetter("p","r"))
+        for ope in self.operations:
+            # 実質的な操作はcheckDepend関数で対応
+            self.checkDepend(ope,0)
+                
+                
+        
+        
 
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        #　確認用にsort
-        self.operations = sorted(self.operations, key=attrgetter('m','t1'))
+        self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-
+            #for j in operation.depend:
+            #    print("r {}/p {}".format(j.r,j.p))
             
 
     def run(self):
         self.readProblem()
         self.solve()
+        self.writeSolution()
         self.checkResult()
         self.writeSolution()
 
