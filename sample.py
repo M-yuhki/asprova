@@ -102,6 +102,7 @@ class Asprova2:
         
         # スケジューリングで重視する傾向
         self.Trend = -1
+        
 
     def readProblem(self):
         n = 0
@@ -159,15 +160,16 @@ class Asprova2:
             self.P = max(self.P, self.iToP[i]);
             
         # シミュレーションの際に考慮する傾向
-        # 遅延のおよその平均値を100000としておく
-        ave_delay = 100000
+        # 遅延のおよその平均値を10000としておく
+        ave_delay = 10000
         AB1 = self.A1*pow(ave_delay,self.B1)
         AB2 = self.A2*pow(ave_delay,self.B2)
         AB3 = self.A3*pow(ave_delay,self.B3)
+        
         if(AB2 == max(AB1,AB2,AB3)):
             self.Trend = 2 # 遅延解消傾向
         elif(AB1 == max(AB1,AB3)):
-            self.Trend = 1 # ペナルティ解消傾向
+            self.Trend = 1 # 段取り解消傾向
         else:
             self.Trend = 3 # ボーナス最大化傾向
 
@@ -214,11 +216,21 @@ class Asprova2:
         self.orders = sorted(self.orders, key=attrgetter('lim'))
         self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
         
+        # 現在までに割り当てた工程の開始時間より
+        # 後に終わりうるものから選択する
+        
+        
         for order in self.orders: # orderをsortした順に見ていく
             if(order.prest == -1): # prestが0のオーダは完了済みなので割り付けない
                 continue
+            
+            if(order.dflg): # dflgがTrueのものから優先的に使用
+                return order
         
-            return order # 残りの納期がもっとも遅いオーダから割り当てる
+        # dflgが全てFalseならprestが0でない先頭のorderを使用
+        for order in self.orders:
+            if(order.prest != -1):
+                return order
     
     def searchOpe(self,r,p):
         
@@ -265,10 +277,8 @@ class Asprova2:
             self.boms = sorted(self.boms, key = attrgetter("cd",sortkey))
         """
         # Trendを元にsort
-        if(self.Trend == 1):
-            self.boms = sorted(self.boms, key = attrgetter("d","c"))
-        else:
-            self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        # 段取りは解消できるからcだけでsortする
+        self.boms = sorted(self.boms, key = attrgetter("c","d"))
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
@@ -294,16 +304,6 @@ class Asprova2:
             
             if m == -1:
                 continue
-            """
-            for m2 in range(self.M):
-                # マシンを選択
-                # BOMをsortしているので望ましいものから選ばれる
-                if self.canMake(m2, i, prest):
-                    m = m2
-                    break
-            if m == -1:
-                continue
-            """
             
             if(mToPreviousI[m] == -1): #そのマシンにオーダが割り付けられていない場合
                 t3 = order.drest
@@ -488,14 +488,16 @@ class Asprova2:
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
 
-        """ 
+        """
         print("********")
         k = 0
         for operation in self.operations:
-            if(operation.order.p == operation.p):
-                print(operation.t3 - operation.order.d)
+            if(operation.p == 0):
+                k += max(0, operation.t1 - operation.order.e)
+        print(k)
         """
         
+
     def run(self):
         self.readProblem()
         self.solve()
@@ -505,4 +507,3 @@ class Asprova2:
 if __name__ == '__main__':
     asprova2 = Asprova2()
     asprova2.run()
-
