@@ -60,7 +60,9 @@ class Operation:
         # 品目番号
         self.i = i
         # オーダそのもの
-        self.order = order # オーダそのもの
+        self.order = order
+        # 依存関係が発生するopeの情報を登録しておく
+        self.depend = []
 
 class Asprova2:
     def __init__(self):
@@ -194,7 +196,23 @@ class Asprova2:
         for order in self.orders:
             if(order.prest != -1):
                 return order
+    
+    def searchOpe(self,r,p):
         
+        for operation in self.operations:
+            if(operation.r == r and operation.p == p):
+                return operation
+    
+    def checkDepend(self,ope):
+        
+        for tar in ope.depend:
+            diff = tar.t3 - ope.t1
+            if(diff > 0):
+                tar.t1 += diff
+                tar.t2 += diff
+                tar.t3 += diff
+                checkDepend(tar)
+                
 
     def solve(self):
         # 各設備の直後の製造開始時刻 : Previous manufacturing end time of each machine
@@ -208,6 +226,10 @@ class Asprova2:
         t3rp = [[-1 for p in range(self.iToP[self.orders[r].i])] for r in range(self.R)]
         # 各設備に割り当てられたオーダの数
         mToNumorder = [0 for m in range(self.M)]
+        
+        
+        # チェック用の配列
+        checkOrder = [[] for r in range(self.R)]
         
         # 工程の総数
         ol = 0
@@ -286,13 +308,27 @@ class Asprova2:
             if(mToPreviousI[m] != -1):
                 mToPreviousOpe[m].t1 -= dantime # t1に段取り時間を追加
                 mToPreviousOpe[m].order.drest  -= dantime # drestから段取り時間を引く
-                mToPreviousOpe[m].order.dflg = True # dflgをTrueにする 
+                mToPreviousOpe[m].order.dflg = True # dflgをTrueにする
+                
+                # 再帰的に依存関係を探索して、問題があれば対応するopeの結果を変更
+                self.checkDepend(mToPreviousOpe[m])
+                
+                mToPreviousOpe[m].depend.append(ope) # 依存関係を登録しておく
             
-            # Falseの時に段取り時間がどうなってる?
-            # 後から割り当てられたりした関係できちんと更新できていないのではないか？
+            # もしdflg = Falseの状態で割り当てを行なっていたのなら
+            # Trueになった際に変化する可能性があるので
+            # 依存関係を追加
+            if(order.dflg == False):
+
+                tarope = self.searchOpe(r,order.prest + 1)
+                tarope.depend.append(ope)
+
+            
             
             # NumOrderの更新
             mToNumorder[m] += 1
+            
+            checkOrder[order.r].append(ope)
             
             # 対象としたオーダのdrestとdflgを更新
             order.drest = t1
@@ -310,8 +346,10 @@ class Asprova2:
             ol -= 1
             if(ol == 0):
                 break
-            
-            """
+        
+        #print(checkOrder)
+     
+        """
             # 各注文の最初の工程から設備と時間を割り付けていく : Assign operation from the first of each order to machine and time
             for p in range(self.iToP[i]):
                 # 利用可能な設備を見つける : Find assignable resource
@@ -341,7 +379,7 @@ class Asprova2:
                 mToPreviousI[m] = i
                 mToPreviousT3[m] = t3
                 t3rp[r][p] = t3
-            """
+        """
             
     def checkResult(self): #最早時間を超えているものを調整する
         max_over = 0
@@ -358,8 +396,14 @@ class Asprova2:
 
     def writeSolution(self):
         print("{}".format(len(self.operations)))
+        
+        #　確認用にsort
+        self.operations = sorted(self.operations, key=attrgetter('m','t1'))
+        
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
+
+            
 
     def run(self):
         self.readProblem()
