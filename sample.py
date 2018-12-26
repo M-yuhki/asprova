@@ -66,8 +66,9 @@ class Operation:
         # オーダそのもの
         self.order = order
         # 依存関係が発生するopeの情報を登録しておく
-        # そのマシンの直後のオーダと、自分の次の工程
+        # beforeには、同一マシンの1つ前の工程と、同一オーダの1つ前の工程が登録される
         self.depend_before = []
+        # afterには、同一マシンの1つ後の工程と、同一オーダの1つ後の工程が登録される
         self.depend_after = []
 
 class Asprova2:
@@ -104,6 +105,10 @@ class Asprova2:
         
         # スケジューリングで重視する傾向
         self.Trend = -1
+        
+        self.AB1 = 0
+        self.AB2 = 0
+        self.AB3 = 0
         
 
     def readProblem(self):
@@ -164,13 +169,13 @@ class Asprova2:
         # シミュレーションの際に考慮する傾向
         # 遅延のおよその平均値を10000としておく
         ave_delay = 30000
-        AB1 = self.A1*pow(ave_delay,self.B1)
-        AB2 = self.A2*pow(ave_delay,self.B2)
-        AB3 = self.A3*pow(ave_delay,self.B3)
+        self.AB1 = self.A1*pow(ave_delay,self.B1)
+        self.AB2 = self.A2*pow(ave_delay,self.B2)
+        self.AB3 = self.A3*pow(ave_delay,self.B3)
         
-        if(AB2 == max(AB1,AB2,AB3)):
+        if(self.AB2 == max(self.AB1,self.AB2,self.AB3)):
             self.Trend = 2 # 遅延解消傾向
-        elif(AB1 == max(AB1,AB3)):
+        elif(self.AB1 == max(self.AB1,self.AB3)):
             self.Trend = 1 # 段取り解消傾向
         else:
             self.Trend = 3 # ボーナス最大化傾向
@@ -320,6 +325,7 @@ class Asprova2:
             
             # マシンごとに見ていくのではなく、すべてのマシンを総当たりして
             # 望ましいマシンを探す
+            
             """
             # 前から探す場合ここから
             m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
@@ -486,7 +492,7 @@ class Asprova2:
                 for j in ope.depend_after:
                     self.checkOver(j,ope.t3)
         
-        else: # 最初の工程でなけれ依存関係のあるt3から判断
+        else: # 最初の工程でなけれ依存関係のある工程のt3から判断
             if(ope.t1 < pret3):
                 over = pret3 - ope.t1
                 ope.t1 += over
@@ -495,9 +501,9 @@ class Asprova2:
                 for j in ope.depend_after:
                     self.checkOver(j,ope.t3)
         return True
-    
-    # 隙間を埋めて遅延を解消する関数
-    def adjustDelay(self,ope,time):
+ 
+    # Stendの値を元に遅延を解消する関数
+    def adjustStend(self,ope,time):
         # timeは、解消したい遅延時間
         # 早めることができるtimeの時間を更新
         if(ope.p == 0):
@@ -508,17 +514,44 @@ class Asprova2:
         if(time < 0):
             time = 0
         
+            
+        # 最後の工程にたどり着くまで再帰的に呼び出す    
+        if(ope.order.p != ope.p):
+            for before in ope.depend_before:
+                if(before.r == ope.r):
+                    time = self.adjustStend(before,time) # 同じオーダについて再帰的に呼び出す
+            
+        ope.t1 -= time
+        ope.t2 -= time
+        ope.t3 -= time
+        return time
+    
+    # 隙間を埋めて遅延を解消する関数
+    def adjustDelay(self,ope,time):
+
+        # 確認用の表示
+        # timeは、解消したい遅延時間
+        # 早めることができるtimeの時間を更新
+        if(ope.p == 0):
+            time = min(time, ope.t1 - ope.order.e)
+        for before in ope.depend_before:
+            #print("ope.t1-before.t3:{}".format(ope.t1-before.t3))
+            time = min(time, ope.t1 - before.t3)
+        
+        if(time <= 0):
+            time = 0
+        
         """    
         # 最後の工程にたどり着くまで再帰的に呼び出す    
         if(ope.order.p != ope.p):
             for after in ope.depend_after:
                 if(after.r == ope.r):
                     time = self.adjustDelay(after,time) # 同じオーダについて再帰的に呼び出す
-        """    
+        """
         ope.t1 -= time
         ope.t2 -= time
         ope.t3 -= time
-        return time 
+        return time
 
     # 隙間を埋めて開始を遅らせる関数
     def adjustStart(self,ope,time):
@@ -539,7 +572,9 @@ class Asprova2:
             for after in ope.depend_after:
                 if(after.r == ope.r):
                     time = self.adjustDelay(after,time) # 同じオーダについて再帰的に呼び出す
-        """    
+        """ 
+        
+        #適当な確率で埋めない
         ope.t1 += time
         ope.t2 += time
         ope.t3 += time
@@ -559,11 +594,19 @@ class Asprova2:
             for j in ope.depend_after:
                 j.depend_before.append(ope)
             
+        
+        for ope in self.operations:
             # 実質的な操作はcheckOver関数で対応
             # 最早開始時間に対して頭が出ている場合、下げる
-            self.checkOver(ope,0)
+            pret = 0
+            # 遅延ボーナスを重視する場合はpretを変更してみる
+            if(self.Trend == 3):
+                pret = 70000
+            
+            self.checkOver(ope,pret)
         
-        # stendを更新する    
+        # stendを更新する 
+        # stendはオーダごとの値なので相関を見ていなかった
         for ope in self.operations:
             if(ope.p == 0):
                 stend[ope.r] = ope.t1 - ope.order.e # そのオーダを前に動かせるだけの時間
@@ -573,56 +616,56 @@ class Asprova2:
                 # 負の値を示すなら遅延は発生していない
                 stend[ope.r] = min(stend[ope.r],(ope.t3 - ope.order.d))
         
-        
         # 工程を前に詰める再構成と、後ろに下げる再構成を繰り返す
         
+        # ここのループをたくさんやれば良いのでは？
+        
+        for i in range(1):
+            self.operations = sorted(self.operations, key = attrgetter("t3","m"),reverse = True)
+            for ope in self.operations:
+                if(stend[ope.r] > 0):
+                    self.adjustDelay(ope,stend[ope.r])
         
         #while True: #解消できる限り解消を試みる
-        for c in range(30):
+        
+        for c in range(1):
             # 前に詰める
-            maxtime = 0 # そのターンでもっとも短縮できた時間
-            self.operations = sorted(self.operations, key = attrgetter("p"),reverse = True)
+            self.operations = sorted(self.operations, key = attrgetter("t1"))
             
             for ope in self.operations:
-                if(ope.p != 0): # 1工程目以外を対象にする
-                    time = self.adjustDelay(ope,9999999)
-                    if(time > 0):
-                        maxtime = max(maxtime,time) 
+                time = self.adjustDelay(ope,999999)
             
-            if(c > 0): # たまに入る
-                self.operations = sorted(self.operations, key = attrgetter("p"))
-                for ope in self.operations:
-                    if(ope.p != ope.order.p): #最終工程以外を対象にする
-                        time = self.adjustStart(ope,999999)
-                        if(time != 0):
-                            maxtime = max(maxtime,time)
             
-            if(maxtime == 0): # そのターンで少しも短縮できなければループを出る
-                break
+            # 後ろに詰める
+            self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
+            for ope in self.operations:
+                time = self.adjustStart(ope,999999)
             
         
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("r","p"))
+        self.operations = sorted(self.operations, key = attrgetter("t1"))
         
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
         
-        """    
-        print("****************************************************************")
-        
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
         for operation in self.operations:
             if(operation.p == 0):
+                #print("着手遅れ{}".format(operation.t1 - operation.order.e))
                 j += max(0, operation.t1 - operation.order.e)
             if(operation.order.p == operation.p):
+                #print("納期遅れ{}".format(operation.t3 - operation.order.d))
                 k += max(0, operation.t3 - operation.order.d)
-        print("多い方が良い {}".format(j))
-        print("少ない方が良い {}".format(k))
+        print("着手遅れ...多い方が良い {}".format(j))
+        print("納期遅れ...少ない方が良い {}".format(k))
+        
+            
         # 各オーダ内でのエラーチェック
         self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
@@ -645,26 +688,9 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!")
                 s = operation.t3
-                
-        #    print(operation.t1 - s)
-        #    s = operation.t3
-
-        
-        print("********")
-        k = 0
-        for operation in self.operations:
-            if(operation.p == 0):
-                k += max(0, operation.t1 - operation.order.e)
-        print(k)
-        
-        print("********")
-        k = 0
-        for operation in self.operations:
-            if(operation.order.p == operation.p):
-                k += max(0, operation.t3 - operation.order.d)
-        print(k)
         """
-
+        
+        
     def run(self):
         self.readProblem()
         self.solve()
