@@ -578,7 +578,7 @@ class Asprova2:
         
         
         #while True: #解消できる限り解消を試みる
-        for i in range(10):
+        for c in range(30):
             # 前に詰める
             maxtime = 0 # そのターンでもっとも短縮できた時間
             self.operations = sorted(self.operations, key = attrgetter("p"),reverse = True)
@@ -586,17 +586,16 @@ class Asprova2:
             for ope in self.operations:
                 if(ope.p != 0): # 1工程目以外を対象にする
                     time = self.adjustDelay(ope,9999999)
-                    if(time != 0):
+                    if(time > 0):
                         maxtime = max(maxtime,time) 
             
-                        
-            self.operations = sorted(self.operations, key = attrgetter("p"))
-            
-            for ope in self.operations:
-                if(ope.p != ope.order.p): #最終工程以外を対象にする
-                    time = self.adjustStart(ope,999999)
-                    if(time != 0):
-                        maxtime = max(maxtime,time)
+            if(c > 0): # たまに入る
+                self.operations = sorted(self.operations, key = attrgetter("p"))
+                for ope in self.operations:
+                    if(ope.p != ope.order.p): #最終工程以外を対象にする
+                        time = self.adjustStart(ope,999999)
+                        if(time != 0):
+                            maxtime = max(maxtime,time)
             
             if(maxtime == 0): # そのターンで少しも短縮できなければループを出る
                 break
@@ -605,23 +604,52 @@ class Asprova2:
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-            
+        
+        """    
         print("****************************************************************")
         
+        # 総遅延時間のチェック
+        j = 0
+        k = 0
+        for operation in self.operations:
+            if(operation.p == 0):
+                j += max(0, operation.t1 - operation.order.e)
+            if(operation.order.p == operation.p):
+                k += max(0, operation.t3 - operation.order.d)
+        print("多い方が良い {}".format(j))
+        print("少ない方が良い {}".format(k))
+        # 各オーダ内でのエラーチェック
         self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
         for operation in self.operations:
-            if(operation.p == operation.order.p):
-                print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
+            if(operation.p == 0):
+                s = operation.t3
+            else:
+                if(operation.t1 - s < 0):
+                    print("ERROR!")
+                s = operation.t3
+        
+        # 各マシン内でのエラーチェック
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        mnow = -1
+        for operation in self.operations:
+            if(operation.m != mnow):
+                mnow = operation.m
+                s = operation.t3
+            else:
+                if(operation.t1 - s < 0):
+                    print("ERROR!")
+                s = operation.t3
+                
         #    print(operation.t1 - s)
         #    s = operation.t3
 
-        """
+        
         print("********")
         k = 0
         for operation in self.operations:
