@@ -51,6 +51,8 @@ class Bom:
         self.d = d
         # cとdを掛け合わせた評価値
         self.cd = c*d
+        # 該当するマシンで取り扱えるBOMの数
+        self.mworth = -1
 
 class Operation:
     def __init__(self, m, r, p, t1, t2, t3, i, order):
@@ -81,7 +83,7 @@ class Operation:
         
         # backfillがその回で適用されたかの判定
         self.backflg = False
-        self.forwaldflg = False
+        self.forwardflg = False
 
 class Asprova2:
     def __init__(self):
@@ -177,6 +179,14 @@ class Asprova2:
         self.P = 0;
         for i in range(self.I):
             self.P = max(self.P, self.iToP[i]);
+        
+        # マシンごとに対応するBOMの数    
+        self.mnum = [0 for i in range(self.M)]
+        for bom in self.boms:
+            self.mnum[bom.m] += 1
+        
+        for bom in self.boms:
+            bom.mworth = self.mnum[bom.m]
             
         # シミュレーションの際に考慮する傾向
         # 遅延のおよその平均値を10000としておく
@@ -313,6 +323,8 @@ class Asprova2:
         """
         # Trendを元にsort
         # 段取りは解消できるからcだけでsortする
+        # 取り扱るBOMが多いマシンから選択されやすくする
+        self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
         self.boms = sorted(self.boms, key = attrgetter("c","d"))
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
@@ -594,15 +606,15 @@ class Asprova2:
         ope.t3 += time
         return time 
 
-    # forwaldfillで間を埋める関数
-    # forwaldfillは、前のジョブを後ろに持っていく
+    # forwardfillで間を埋める関数
+    # forwardfillは、前のジョブを後ろに持っていく
     def forwardfill(self):    
         # マシン順→実行順にsort
         self.operations = sorted(self.operations, key = attrgetter("m","t3"),reverse = True)
         
         # フラグの初期化
         for ope in self.operations:
-            ope.forwaldflg = False
+            ope.forwardflg = False
         
         after_t1 = -1 # 直後の工程の開始時間
         now_m = -1 # 現在のマシンの番号
@@ -691,9 +703,10 @@ class Asprova2:
                     bestfit.t3 = after_t1
                     bestfit.t2 = bestfit.t3 - bestfit.run
                     bestfit.t1 = bestfit.t2
-                    bestfit.forwaldflg = True
+                    bestfit.forwardflg = True
                     mfound = True
                     count += 1
+                    #print("success")
                     #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
@@ -734,6 +747,9 @@ class Asprova2:
                 firstfit = None # 最初に見つけたもの
                 bestfit = None # もっとも好条件なものを選ぶ
                 
+                #if(space > 0):
+                    #print("HIT:  M:m {} r {} p {} time:{}({} ~ {})".format(ope.m+1,ope.r+1,ope.p+1,space,before_t3,ope.t1))
+                
                 while(space > 0): # スペースがある程度あるならbackfillを試みる
                     p += 1 # continueの影響を受けないように冒頭でインクリメント
                     
@@ -767,11 +783,13 @@ class Asprova2:
                     # 判定はもう少し複雑にできるけどとりあえずシンプルに
                     if(tar.order_before != None): # 2工程目以降
                         if(tar.order_before.t3 <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
+                            #print("judge")
                             if(firstfit == None):
                                 firstfit = tar
                                 bestfit = tar
                             
                             else: # 遅延がもっとも解消される
+                                
                                 if(bestfit.run < tar.run and tar.delay > 0):
                                     bestfit = tar
 
@@ -793,6 +811,7 @@ class Asprova2:
                             # 繰り返せるけどとりあえずbreak
                 
                 if(bestfit != None):
+                    #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                     bestfit.t1 = before_t3
                     bestfit.t2 = bestfit.t1
                     bestfit.t3 = bestfit.t2 + bestfit.run
@@ -857,6 +876,7 @@ class Asprova2:
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
         self.backfill()
+        #self.forwardfill()
 
         # 前に埋めるか後ろに埋めるかは
         # trendで判定したら良さそう
@@ -869,7 +889,7 @@ class Asprova2:
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
-        for i in range(4):
+        for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             for ope in self.operations:
                 time = self.adjustStart(ope,999999)
@@ -883,6 +903,7 @@ class Asprova2:
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
+            #print(operation.run)
         
         """
         # 総遅延時間のチェック
