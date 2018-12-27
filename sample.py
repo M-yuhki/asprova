@@ -81,6 +81,7 @@ class Operation:
         
         # backfillがその回で適用されたかの判定
         self.backflg = False
+        self.forwaldflg = False
 
 class Asprova2:
     def __init__(self):
@@ -593,6 +594,111 @@ class Asprova2:
         ope.t3 += time
         return time 
 
+    # forwaldfillで間を埋める関数
+    # forwaldfillは、前のジョブを後ろに持っていく
+    def forwardfill(self):    
+        # マシン順→実行順にsort
+        self.operations = sorted(self.operations, key = attrgetter("m","t3"),reverse = True)
+        
+        # フラグの初期化
+        for ope in self.operations:
+            ope.forwaldflg = False
+        
+        after_t1 = -1 # 直後の工程の開始時間
+        now_m = -1 # 現在のマシンの番号
+        mfound = False # そのマシンで一度でも見つかったか
+        count = 0
+        totals = 0
+        # forwardfillないの判定を容易にするためにjでループ回す
+        # 一番最後のオーダはspaceが発生することはないので無視
+        for j in range(len(self.operations)): # backfill内部の処理をしやすくするためにjでループ回す
+            ope = self.operations[j]
+            # 別のマシン部分に入るor最初の処理
+            # パラメータをリセット
+            if(ope.m != now_m or after_t1 == -1):
+                now_m = ope.m
+                mfound = False
+                after_t1 = ope.t1
+            
+            
+            elif(not(mfound)):
+            #elif(True):
+                space = after_t1 - ope.t3 # 現在の工程と一つ後の工程の間の時間
+                p = j #これから見るジョブのindex
+
+                firstfit = None # 最初に見つけたもの
+                bestfit = None # もっとも好条件なものを選ぶ
+                
+                while(space > 0): # スペースがある程度あるならbackfillを試みる
+                    p += 1 # continueの影響を受けないように冒頭でインクリメント
+                    
+                    if(p >= len(self.operations)): # 最終マシン用の終了判定
+                        break
+                    
+                    #ターゲットとなるマシンの情報を登録
+                    
+                    tar_a = self.operations[p-1]
+                    tar = self.operations[p]
+                    
+                    if(p == len(self.operations)):
+                        tar_b = self.operations[p+1]
+                    else:
+                        tar_b = tar
+                        
+                    if(tar.m != now_m): # 別のマシン部分まで到達したら終了
+                        break
+                    
+                    if(not(tar_b.i == tar.i == tar_a.i)): #段取り時間に変更が出る場合は（面倒なので）スルー
+                        continue
+                    
+                    if(tar.backflg or tar_b.backflg): #一度backfillされている場合もスルー
+                        continue
+                    # 各オーダの最初の工程の場合
+                    # 1工程目は対象外
+                    if(tar.p == 0):
+                        continue
+                        
+                    # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
+                    # 判定はもう少し複雑にできるけどとりあえずシンプルに
+                    if(tar.order_after != None): # 最終工程以外
+                        if(tar.order_after.t1 >= after_t1 and tar.run < space and ope.i == tar.i == tar_b.i):
+                            if(firstfit == None):
+                                firstfit = tar
+                                bestfit = tar
+                            
+                            else: # 遅延がもっとも解消される
+                                if(bestfit.run < tar.run):
+                                    bestfit = tar
+
+                            #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
+                            # 繰り返せるけどとりあえずbreak
+                    
+                    else: # 最終工程
+                        if(tar.order.d >= after_t1 and tar.run < space and ope.i == tar.i == tar_b.i):
+                            if(firstfit == None):
+                                firstfit = tar
+                                bestfit = tar
+                            
+                            
+                            else:
+                                if(bestfit.run < tar.run):
+                                    bestfit = tar
+
+                            #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
+                            # 繰り返せるけどとりあえずbreak
+                
+                if(bestfit != None):
+                    bestfit.t3 = after_t1
+                    bestfit.t2 = bestfit.t3 - bestfit.run
+                    bestfit.t1 = bestfit.t2
+                    bestfit.forwaldflg = True
+                    mfound = True
+                    count += 1
+                    #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
+                       
+                #before値の更新       
+                after_t1 = ope.t1  
+
 
     # backfillで間を埋める関数
     def backfill(self):    
@@ -749,6 +855,7 @@ class Asprova2:
                 ope.order.delay = ope.t3 - ope.order.d
         
         #backfillで間を埋める
+        # backfillは、後ろのジョブを前に出す
         self.backfill()
 
         # 前に埋めるか後ろに埋めるかは
