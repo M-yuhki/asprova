@@ -309,7 +309,7 @@ class Asprova2:
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
         self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
+        self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
         
         # BOMをsortする
         # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
@@ -327,8 +327,10 @@ class Asprova2:
         # Trendを元にsort
         # 段取りは解消できるからcだけでsortする
         # 取り扱るBOMが多いマシンから選択されやすくする
+        
         self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
         self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
@@ -745,13 +747,14 @@ class Asprova2:
             elif(not(mfound)):
             #elif(True):
                 space = ope.t1 - before_t3 # 現在の工程と一つ前の工程の間の時間
+                #print(" M:m {} r {} p {} time:{}({} ~ {})".format(ope.m+1,ope.r+1,ope.p+1,space,before_t3,ope.t1))
                 p = j #これから見るジョブのindex
 
                 firstfit = None # 最初に見つけたもの
                 bestfit = None # もっとも好条件なものを選ぶ
                 
                 #if(space > 0):
-                    #print("HIT:  M:m {} r {} p {} time:{}({} ~ {})".format(ope.m+1,ope.r+1,ope.p+1,space,before_t3,ope.t1))
+                    #print("HIT!!!:  M:m {} r {} p {} time:{}({} ~ {})".format(ope.m+1,ope.r+1,ope.p+1,space,before_t3,ope.t1))
                 
                 while(space > 0): # スペースがある程度あるならbackfillを試みる
                     p += 1 # continueの影響を受けないように冒頭でインクリメント
@@ -793,7 +796,7 @@ class Asprova2:
                             
                             else: # 遅延がもっとも解消される
                                 
-                                if(bestfit.run < tar.run and tar.order.delay > 0):
+                                if(bestfit.run < tar.run):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
@@ -807,14 +810,14 @@ class Asprova2:
                             
                             
                             else:
-                                if(bestfit.run < tar.run and tar.order.delay > 0):
+                                if(bestfit.run < tar.run):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
                 
                 if(bestfit != None):
-                    #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
+                    #print("HIT:  M:m {} r {} p {} t1 {} **************".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                     bestfit.t1 = before_t3
                     bestfit.t2 = bestfit.t1
                     bestfit.t3 = bestfit.t2 + bestfit.run
@@ -879,6 +882,8 @@ class Asprova2:
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
         self.backfill()
+        #print("*********************************************")
+        self.backfill()
         #self.forwardfill()
 
         # 前に埋めるか後ろに埋めるかは
@@ -892,10 +897,11 @@ class Asprova2:
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
-        for i in range(10):
+        for i in range(1):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             for ope in self.operations:
                 time = self.adjustStart(ope,999999)
+
                 
     def writeSolution(self):
         print("{}".format(len(self.operations)))
@@ -903,12 +909,17 @@ class Asprova2:
         self.operations = sorted(self.operations, key = attrgetter("m","t1"))
         
         k = 0
+        #brank = [0 for i in range(self.M)]
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-            #print(operation.run)
+            #brank[operation.m] = operation.t1 - k
+            #k = operation.t3
+            #print(operation.t1 - k)
+            #k = operation.t3
         
-        
+        #print(brank)
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -945,7 +956,7 @@ class Asprova2:
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
         
-        
+        """
         
     def run(self):
         self.readProblem()
