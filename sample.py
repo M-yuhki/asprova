@@ -3,6 +3,7 @@
 
 #backfillの判定あたりはtrendをきちんと使うのが良さそう
 #遅延してないオーダをbackfillで持ってきても意味ない？
+#パラメータは高くしすぎるとWAになる
 
 import sys
 import fileinput
@@ -256,8 +257,10 @@ class Asprova2:
     def selectOrder(self):
         
         # orderは更新されるのでsortし直す
+        
         self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
+        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
+        
         
         # 現在までに割り当てた工程の開始時間より
         # 後に終わりうるものから選択する
@@ -306,7 +309,7 @@ class Asprova2:
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
         self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
+        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
         
         # BOMをsortする
         # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
@@ -790,7 +793,7 @@ class Asprova2:
                             
                             else: # 遅延がもっとも解消される
                                 
-                                if(bestfit.run < tar.run and tar.delay > 0):
+                                if(bestfit.run < tar.run and tar.order.delay > 0):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
@@ -804,7 +807,7 @@ class Asprova2:
                             
                             
                             else:
-                                if(bestfit.run < tar.run and tar.delay > 0):
+                                if(bestfit.run < tar.run and tar.order.delay > 0):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
@@ -905,7 +908,7 @@ class Asprova2:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #print(operation.run)
         
-        """
+        
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -942,7 +945,7 @@ class Asprova2:
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
         
-        """
+        
         
     def run(self):
         self.readProblem()
