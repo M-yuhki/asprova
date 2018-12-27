@@ -61,15 +61,21 @@ class Operation:
         self.t2 = t2
         # 製造終了時刻      : Manufacturing end time
         self.t3 = t3
+        # 製造時間
+        self.run = t3 - t2
+        
         # 品目番号
         self.i = i
         # オーダそのもの
         self.order = order
         # 依存関係が発生するopeの情報を登録しておく
-        # beforeには、同一マシンの1つ前の工程と、同一オーダの1つ前の工程が登録される
-        self.depend_before = []
-        # afterには、同一マシンの1つ後の工程と、同一オーダの1つ後の工程が登録される
-        self.depend_after = []
+        self.machine_before = None
+        self.machine_after = None
+        self.order_before = None
+        self.order_after = None
+        
+        # backfillがその回で適用されたかの判定
+        self.backflg = False
 
 class Asprova2:
     def __init__(self):
@@ -353,9 +359,9 @@ class Asprova2:
             # その品目の次の工程
             if((p - prest) != 0):
                 x = self.searchOpe(r,(p - prest - 1))
-                x.depend_after.append(ope)
+                x.order_after.append(ope)
             if(mToPreviousI[m] != -1):
-                mToPreviousOpe[m].depend_after.append(ope)
+                mToPreviousOpe[m].machine_after.append(ope)
 
             # NumOrderの更新
             mToNumorder[m] += 1
@@ -416,12 +422,15 @@ class Asprova2:
                 
                 # 依存関係の登録
                 # そのマシンの次のオーダ
-                ope.depend_after.append(mToPreviousOpe[m])
+                ope.machine_after = mToPreviousOpe[m]
+                mToPreviousOpe[m].machine_before = ope
             
             # 依存関係の登録
             # その品目の次の工程
             if(order.prest != order.p):
-                ope.depend_after.append(self.searchOpe(r,order.prest+1))
+                tar = self.searchOpe(r,order.prest+1)
+                ope.order_after = tar
+                tar.order_before = ope
             
             
             # NumOrderの更新
@@ -489,8 +498,10 @@ class Asprova2:
                 ope.t1 += over
                 ope.t2 += over
                 ope.t3 += over
-                for j in ope.depend_after:
-                    self.checkOver(j,ope.t3)
+                if(ope.machine_after != None):
+                    self.checkOver(ope.machine_after,ope.t3)
+                if(ope.order_after != None):
+                    self.checkOver(ope.order_after,ope.t3)
         
         else: # 最初の工程でなけれ依存関係のある工程のt3から判断
             if(ope.t1 < pret3):
@@ -498,8 +509,11 @@ class Asprova2:
                 ope.t1 += over
                 ope.t2 += over
                 ope.t3 += over
-                for j in ope.depend_after:
-                    self.checkOver(j,ope.t3)
+                if(ope.machine_after != None):
+                    self.checkOver(ope.machine_after,ope.t3)
+                if(ope.order_after != None):
+                    self.checkOver(ope.order_after,ope.t3)
+                
         return True
  
     # Stendの値を元に遅延を解消する関数
@@ -509,17 +523,16 @@ class Asprova2:
         if(ope.p == 0):
             time = min(time, ope.t1 - ope.order.e)
         
-        for before in ope.depend_before:
-            time = min(time, ope.t1 - before.t3)
+        time = min(time, ope.t1 - ope.machine_before.t3)
+        time = min(time, ope.t1 - ope.rder_before.t3)
+        
         if(time < 0):
             time = 0
         
             
         # 最後の工程にたどり着くまで再帰的に呼び出す    
         if(ope.order.p != ope.p):
-            for before in ope.depend_before:
-                if(before.r == ope.r):
-                    time = self.adjustStend(before,time) # 同じオーダについて再帰的に呼び出す
+            time = self.adjustStend(ope.order_before,time) # 同じオーダについて再帰的に呼び出す
             
         ope.t1 -= time
         ope.t2 -= time
@@ -534,9 +547,11 @@ class Asprova2:
         # 早めることができるtimeの時間を更新
         if(ope.p == 0):
             time = min(time, ope.t1 - ope.order.e)
-        for before in ope.depend_before:
             #print("ope.t1-before.t3:{}".format(ope.t1-before.t3))
-            time = min(time, ope.t1 - before.t3)
+        if(ope.machine_before != None):
+            time = min(time, ope.t1 - ope.machine_before.t3)
+        if(ope.order_before != None):
+            time = min(time, ope.t1 - ope.order_before.t3)
         
         if(time <= 0):
             time = 0
@@ -544,9 +559,7 @@ class Asprova2:
         """    
         # 最後の工程にたどり着くまで再帰的に呼び出す    
         if(ope.order.p != ope.p):
-            for after in ope.depend_after:
-                if(after.r == ope.r):
-                    time = self.adjustDelay(after,time) # 同じオーダについて再帰的に呼び出す
+            time = self.adjustDelay(ope.order_after,time) # 同じオーダについて再帰的に呼び出す
         """
         ope.t1 -= time
         ope.t2 -= time
@@ -560,8 +573,10 @@ class Asprova2:
         if(ope.p == ope.order.p):
             time = min(time, ope.order.d - ope.t3)
         
-        for after in ope.depend_after:
-            time = min(time, after.t1 - ope.t3)
+        if(ope.machine_after != None):
+            time = min(time, ope.machine_after.t1 - ope.t3)
+        if(ope.order_after != None):
+            time = min(time, ope.order_after.t1 - ope.t3)
             
         if(time < 0):
             time = 0
@@ -569,9 +584,7 @@ class Asprova2:
         """    
         # 最後の工程にたどり着くまで再帰的に呼び出す    
         if(ope.order.p != ope.p):
-            for after in ope.depend_after:
-                if(after.r == ope.r):
-                    time = self.adjustDelay(after,time) # 同じオーダについて再帰的に呼び出す
+            time = self.adjustDelay(ope.order_after,time) # 同じオーダについて再帰的に呼び出す
         """ 
         
         #適当な確率で埋めない
@@ -589,11 +602,9 @@ class Asprova2:
         # 工程順にsort
         # こうすることによって2工程目以降のcheckの必要がなくなる
         self.operations = sorted(self.operations, key= attrgetter("p","r"))
-        for ope in self.operations:
             # まずはbefore方向の依存関係を登録しておく
-            for j in ope.depend_after:
-                j.depend_before.append(ope)
-            
+            #for j in ope.depend_after:
+            #    j.depend_before.append(ope)
         
         for ope in self.operations:
             # 実質的な操作はcheckOver関数で対応
@@ -640,18 +651,109 @@ class Asprova2:
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             for ope in self.operations:
                 time = self.adjustStart(ope,999999)
+    
+    # backfillで間を埋める関数
+    def backfill(self):    
+        # マシン順→実行順にsort
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        
+        # フラグの初期化
+        for ope in self.operations:
+            ope.backflg = False
+        
+        before_t3 = -1 # 直前の工程の完了時間
+        now_m = -1 # 現在のマシンの番号
+        mfound = False # そのマシンで一度でも見つかったか
+        # backfillないの判定を容易にするためにjでループ回す
+        # 一番最後のオーダはspaceが発生することはないので無視
+        for j in range(len(self.operations)): # backfill内部の処理をしやすくするためにjでループ回す
+            ope = self.operations[j]
+            # 別のマシン部分に入るor最初の処理
+            # パラメータをリセット
+            if(ope.m != now_m or before_t3 == -1):
+                now_m = ope.m
+                mfound = False
+                before_t3 = ope.t3
             
+            
+            elif(not(mfound)):
+                space = ope.t1 - before_t3 # 現在の工程と一つ前の工程の間の時間
+                p = j #これから見るジョブのindex
+                if(space>0):
+                    print("start!")
+                    print("ope.t1 {} - before_t3 {}".format(ope.t1, before_t3))
+                
+                while(space > 0): # スペースがある程度あるならbackfillを試みる
+                    p += 1 # continueの影響を受けないように冒頭でインクリメント
+                    
+                    if(p >= len(self.operations)): # 最終マシン用の終了判定
+                        break
+                    
+                    #ターゲットとなるマシンの情報を登録
+                    
+                    tar_b = self.operations[p-1]
+                    tar = self.operations[p]
+                    
+                    if(p == len(self.operations)):
+                        tar_a = self.operations[p+1]
+                    else:
+                        tar_a = tar
+                        
+                    if(tar.m != now_m): # 別のマシン部分まで到達したら終了
+                        break
+                    
+                    if(not(tar_b.i == tar.i == tar_a.i)): #段取り時間に変更が出る場合は（面倒なので）スルー
+                        continue
+                    
+                    if(tar.backflg or tar_a.backflg): #一度backfillされている場合もスルー
+                        continue
+                    
+                    # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
+                    # 判定はもう少し複雑にできるけどとりあえずシンプルに
+                    if(tar.order_before != None):
+                        if(tar.order_before.t3 <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
+                            print("found! before.t3 {} tar.m{} tar.r{} tar.p{}".format(before_t3,tar.m+1, tar.r+1, tar.p+1))
+                            # spaceを詰めてbackfill
+                            tar.t1 = before_t3
+                            tar.t2 = tar.t1 #段取り時間は発生しない
+                            tar.t3 = tar.t2 + tar.run
+                            tar.backflg = True
+                            mfound = True
+                        
+                            # 繰り返せるけどとりあえずbreak
+                            break
+                    
+                    else:
+                        if(tar.order.e <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
+                            print("found! before.t3 {} tar.m{} tar.r{} tar.p{}".format(before_t3,tar.m+1, tar.r+1, tar.p+1))
+                            # spaceを詰めてbackfill
+                            tar.t1 = before_t3
+                            tar.t2 = tar.t1 #段取り時間は発生しない
+                            tar.t3 = tar.t2 + tar.run
+                            tar.backflg = True
+                            mfound = True
+                        
+                            # 繰り返せるけどとりあえずbreak
+                            break
+                        
+                #before値の更新       
+                before_t3 = ope.t3
+                    
+
+        
+        
+        
         
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
-        self.operations = sorted(self.operations, key = attrgetter("t1"))
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
         
+        k = 0
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-        
-        """
+            
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -665,7 +767,6 @@ class Asprova2:
         print("着手遅れ...多い方が良い {}".format(j))
         print("納期遅れ...少ない方が良い {}".format(k))
         
-            
         # 各オーダ内でのエラーチェック
         self.operations = sorted(self.operations, key = attrgetter("r","p"))
         
@@ -674,7 +775,7 @@ class Asprova2:
                 s = operation.t3
             else:
                 if(operation.t1 - s < 0):
-                    print("ERROR!")
+                    print("ERROR!  O:m {} r {} p {} t1{}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
         
         # 各マシン内でのエラーチェック
@@ -686,14 +787,16 @@ class Asprova2:
                 s = operation.t3
             else:
                 if(operation.t1 - s < 0):
-                    print("ERROR!")
+                    print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        """
         
         
     def run(self):
         self.readProblem()
         self.solve()
+        self.checkResult()
+        self.writeSolution()
+        self.backfill()
         self.checkResult()
         self.writeSolution()
 
