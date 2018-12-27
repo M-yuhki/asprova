@@ -571,7 +571,9 @@ class Asprova2:
         # timeは、解消したい遅延時間
         # 早めることができるtimeの時間を更新
         if(ope.p == ope.order.p):
-            time = min(time, ope.order.d - ope.t3)
+        #if(ope.p != 0):
+            #time = min(time, ope.order.d - ope.t3)
+            time = 0
         
         if(ope.machine_after != None):
             time = min(time, ope.machine_after.t1 - ope.t3)
@@ -630,23 +632,18 @@ class Asprova2:
         # 工程を前に詰める再構成と、後ろに下げる再構成を繰り返す
         
         # ここのループをたくさんやれば良いのでは？
-        
-        for i in range(1):
+        """
+        for i in range(0):
             self.operations = sorted(self.operations, key = attrgetter("t3","m"),reverse = True)
             for ope in self.operations:
                 if(stend[ope.r] > 0):
                     self.adjustDelay(ope,stend[ope.r])
+        """
+        #これをやると着手遅れが多くもらえるぽいので
+        #ボーナス最大化志向の時のみ選択
         
-        #while True: #解消できる限り解消を試みる
-        
-        for c in range(1):
-            # 前に詰める
-            self.operations = sorted(self.operations, key = attrgetter("t1"))
-            
-            for ope in self.operations:
-                time = self.adjustDelay(ope,999999)
-            
-            
+        if(self.Trend == 3):
+
             # 後ろに詰める
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             for ope in self.operations:
@@ -664,6 +661,8 @@ class Asprova2:
         before_t3 = -1 # 直前の工程の完了時間
         now_m = -1 # 現在のマシンの番号
         mfound = False # そのマシンで一度でも見つかったか
+        count = 0
+        totals = 0
         # backfillないの判定を容易にするためにjでループ回す
         # 一番最後のオーダはspaceが発生することはないので無視
         for j in range(len(self.operations)): # backfill内部の処理をしやすくするためにjでループ回す
@@ -679,9 +678,8 @@ class Asprova2:
             elif(not(mfound)):
                 space = ope.t1 - before_t3 # 現在の工程と一つ前の工程の間の時間
                 p = j #これから見るジョブのindex
-                if(space>0):
-                    print("start!")
-                    print("ope.t1 {} - before_t3 {}".format(ope.t1, before_t3))
+
+                bestfit = None # もっともfitするものを探す
                 
                 while(space > 0): # スペースがある程度あるならbackfillを試みる
                     p += 1 # continueの影響を受けないように冒頭でインクリメント
@@ -707,40 +705,66 @@ class Asprova2:
                     
                     if(tar.backflg or tar_a.backflg): #一度backfillされている場合もスルー
                         continue
-                    
+                    # 各オーダの最初の工程の場合
+                    # 1工程目は対象外
+                    if(tar.p == 0):
+                        continue
+                        
                     # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
                     # 判定はもう少し複雑にできるけどとりあえずシンプルに
-                    if(tar.order_before != None):
+                    if(tar.order_before != None): # 2工程目以降
                         if(tar.order_before.t3 <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                            print("found! before.t3 {} tar.m{} tar.r{} tar.p{}".format(before_t3,tar.m+1, tar.r+1, tar.p+1))
+                            if(bestfit == None):
+                                bestfit = tar
+                            
+                            else:
+                                if(bestfit.run < tar.run):
+                                    bestfit = tar
                             # spaceを詰めてbackfill
+                            """
                             tar.t1 = before_t3
                             tar.t2 = tar.t1 #段取り時間は発生しない
                             tar.t3 = tar.t2 + tar.run
                             tar.backflg = True
                             mfound = True
-                        
+                            count += 1
+                            """
+                            #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
-                            break
                     
-                    else:
+                    else: # 1工程目
                         if(tar.order.e <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                            print("found! before.t3 {} tar.m{} tar.r{} tar.p{}".format(before_t3,tar.m+1, tar.r+1, tar.p+1))
+                            if(bestfit == None):
+                                bestfit = tar
+                            
+                            
+                            else:
+                                if(bestfit.run < tar.run):
+                                    bestfit = tar
+                            
                             # spaceを詰めてbackfill
+                            """
                             tar.t1 = before_t3
                             tar.t2 = tar.t1 #段取り時間は発生しない
                             tar.t3 = tar.t2 + tar.run
                             tar.backflg = True
                             mfound = True
-                        
+                            count += 1
+                            """
+                            #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
-                            break
-                        
+                
+                if(bestfit != None):
+                    bestfit.t1 = before_t3
+                    bestfit.t2 = bestfit.t1
+                    bestfit.t3 = bestfit.t2 + bestfit.run
+                    bestfit.backflg = True
+                    mfound = True
+                    #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
+                       
                 #before値の更新       
                 before_t3 = ope.t3
-                    
 
-        
         
         
         
@@ -753,7 +777,7 @@ class Asprova2:
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-            
+        """ 
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -789,15 +813,13 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        
+        """
         
     def run(self):
         self.readProblem()
         self.solve()
         self.checkResult()
-        self.writeSolution()
         self.backfill()
-        self.checkResult()
         self.writeSolution()
 
 if __name__ == '__main__':
