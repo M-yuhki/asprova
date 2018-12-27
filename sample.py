@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+#backfillの判定あたりはtrendをきちんと使うのが良さそう
+#遅延してないオーダをbackfillで持ってきても意味ない？
+
 import sys
 import fileinput
 import operator
@@ -30,6 +33,8 @@ class Order:
         self.erest = e
         # 直前の工程の段取り時間が確定しているか否か
         self.dflg = True
+        # 遅延している時間
+        self.delay = -1
 
 class Bom:
     def __init__(self, i, p, m, t,c,d):
@@ -568,12 +573,11 @@ class Asprova2:
 
     # 隙間を埋めて開始を遅らせる関数
     def adjustStart(self,ope,time):
-        # timeは、解消したい遅延時間
+        # timeは、遅らせることができる時間
         # 早めることができるtimeの時間を更新
         if(ope.p == ope.order.p):
         #if(ope.p != 0):
-            #time = min(time, ope.order.d - ope.t3)
-            time = 0
+            time = min(time, ope.order.d - ope.t3)
         
         if(ope.machine_after != None):
             time = min(time, ope.machine_after.t1 - ope.t3)
@@ -583,72 +587,13 @@ class Asprova2:
         if(time < 0):
             time = 0
         
-        """    
-        # 最後の工程にたどり着くまで再帰的に呼び出す    
-        if(ope.order.p != ope.p):
-            time = self.adjustDelay(ope.order_after,time) # 同じオーダについて再帰的に呼び出す
-        """ 
-        
         #適当な確率で埋めない
         ope.t1 += time
         ope.t2 += time
         ope.t3 += time
         return time 
-            
-    
-    def checkResult(self): #依存関係を元に時間を調整する
-    
-        # 各オーダの「これだけ早くできる」を登録
-        stend = [-1 for i in range(self.R)]
-        
-        # 工程順にsort
-        # こうすることによって2工程目以降のcheckの必要がなくなる
-        self.operations = sorted(self.operations, key= attrgetter("p","r"))
-            # まずはbefore方向の依存関係を登録しておく
-            #for j in ope.depend_after:
-            #    j.depend_before.append(ope)
-        
-        for ope in self.operations:
-            # 実質的な操作はcheckOver関数で対応
-            # 最早開始時間に対して頭が出ている場合、下げる
-            pret = 0
-            # 遅延ボーナスを重視する場合はpretを変更してみる
-            if(self.Trend == 3):
-                pret = 70000
-            
-            self.checkOver(ope,pret)
-        
-        # stendを更新する 
-        # stendはオーダごとの値なので相関を見ていなかった
-        for ope in self.operations:
-            if(ope.p == 0):
-                stend[ope.r] = ope.t1 - ope.order.e # そのオーダを前に動かせるだけの時間
-            if(ope.order.p == ope.p):
-                # (ope.t3 - ope.order.d)は、遅延している時間
-                # そのためstendの値は"遅延を解消するために動かせる値の限界値"である
-                # 負の値を示すなら遅延は発生していない
-                stend[ope.r] = min(stend[ope.r],(ope.t3 - ope.order.d))
-        
-        # 工程を前に詰める再構成と、後ろに下げる再構成を繰り返す
-        
-        # ここのループをたくさんやれば良いのでは？
-        """
-        for i in range(0):
-            self.operations = sorted(self.operations, key = attrgetter("t3","m"),reverse = True)
-            for ope in self.operations:
-                if(stend[ope.r] > 0):
-                    self.adjustDelay(ope,stend[ope.r])
-        """
-        #これをやると着手遅れが多くもらえるぽいので
-        #ボーナス最大化志向の時のみ選択
-        
-        if(self.Trend == 3):
 
-            # 後ろに詰める
-            self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
-            for ope in self.operations:
-                time = self.adjustStart(ope,999999)
-    
+
     # backfillで間を埋める関数
     def backfill(self):    
         # マシン順→実行順にsort
@@ -676,10 +621,12 @@ class Asprova2:
             
             
             elif(not(mfound)):
+            #elif(True):
                 space = ope.t1 - before_t3 # 現在の工程と一つ前の工程の間の時間
                 p = j #これから見るジョブのindex
 
-                bestfit = None # もっともfitするものを探す
+                firstfit = None # 最初に見つけたもの
+                bestfit = None # もっとも好条件なものを選ぶ
                 
                 while(space > 0): # スペースがある程度あるならbackfillを試みる
                     p += 1 # continueの影響を受けないように冒頭でインクリメント
@@ -714,43 +661,28 @@ class Asprova2:
                     # 判定はもう少し複雑にできるけどとりあえずシンプルに
                     if(tar.order_before != None): # 2工程目以降
                         if(tar.order_before.t3 <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                            if(bestfit == None):
+                            if(firstfit == None):
+                                firstfit = tar
                                 bestfit = tar
                             
-                            else:
-                                if(bestfit.run < tar.run):
+                            else: # 遅延がもっとも解消される
+                                if(bestfit.run < tar.run and tar.delay > 0):
                                     bestfit = tar
-                            # spaceを詰めてbackfill
-                            """
-                            tar.t1 = before_t3
-                            tar.t2 = tar.t1 #段取り時間は発生しない
-                            tar.t3 = tar.t2 + tar.run
-                            tar.backflg = True
-                            mfound = True
-                            count += 1
-                            """
+
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
                     
                     else: # 1工程目
                         if(tar.order.e <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                            if(bestfit == None):
+                            if(firstfit == None):
+                                firstfit = tar
                                 bestfit = tar
                             
                             
                             else:
-                                if(bestfit.run < tar.run):
+                                if(bestfit.run < tar.run and tar.delay > 0):
                                     bestfit = tar
-                            
-                            # spaceを詰めてbackfill
-                            """
-                            tar.t1 = before_t3
-                            tar.t2 = tar.t1 #段取り時間は発生しない
-                            tar.t3 = tar.t2 + tar.run
-                            tar.backflg = True
-                            mfound = True
-                            count += 1
-                            """
+
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
                 
@@ -760,14 +692,81 @@ class Asprova2:
                     bestfit.t3 = bestfit.t2 + bestfit.run
                     bestfit.backflg = True
                     mfound = True
+                    count += 1
                     #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
-                before_t3 = ope.t3
+                before_t3 = ope.t3            
+        
+    def checkResult(self): #依存関係を元に時間を調整する
+    
+        # 各オーダの「これだけ早くできる」を登録
+        stend = [-1 for i in range(self.R)]
+        
+        # 工程順にsort
+        # こうすることによって2工程目以降のcheckの必要がなくなる
+        self.operations = sorted(self.operations, key= attrgetter("p","r"))
+            # まずはbefore方向の依存関係を登録しておく
+            #for j in ope.depend_after:
+            #    j.depend_before.append(ope)
+        
+        for ope in self.operations:
+            # 実質的な操作はcheckOver関数で対応
+            # 最早開始時間に対して頭が出ている場合、下げる
+            pret = 0
+            # 遅延ボーナスを重視する場合はpretを変更してみる
+            #if(self.Trend == 3):
+            #    pret = 70000
+            
+            self.checkOver(ope,pret)
+        
+        # stendを更新する 
+        # stendはオーダごとの値なので相関を見ていなかった
+        """
+        for ope in self.operations:
+            if(ope.p == 0):
+                stend[ope.r] = ope.t1 - ope.order.e # そのオーダを前に動かせるだけの時間
+            if(ope.order.p == ope.p):
+                # (ope.t3 - ope.order.d)は、遅延している時間
+                # そのためstendの値は"遅延を解消するために動かせる値の限界値"である
+                # 負の値を示すなら遅延は発生していない
+                stend[ope.r] = min(stend[ope.r],(ope.t3 - ope.order.d))
+        
+        # 工程を前に詰める再構成と、後ろに下げる再構成を繰り返す
+        
+        # ここのループをたくさんやれば良いのでは？
+       
+        for i in range(10):
+            self.operations = sorted(self.operations, key = attrgetter("t3","m"),reverse = True)
+            for ope in self.operations:
+                if(stend[ope.r] > 0):
+                    self.adjustDelay(ope,stend[ope.r])
+        """
+        
+        # 遅延時間を登録
+        for ope in self.operations:
+            if(ope.p == ope.order.p):
+                ope.order.delay = ope.t3 - ope.order.d
+        
+        #backfillで間を埋める
+        self.backfill()
 
+        # 前に埋めるか後ろに埋めるかは
+        # trendで判定したら良さそう
         
-        
-        
+        # 前に詰める
+        #self.operations = sorted(self.operations, key = attrgetter("t1"))
+            
+        #for ope in self.operations:
+        #    time = self.adjustDelay(ope,999999)        
+        # backfillでも空いてしまった隙間を
+        # できるだけ後ろ方向に詰める
+        # とりあえず4回くらいやってみる
+        for i in range(4):
+            self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
+            for ope in self.operations:
+                time = self.adjustStart(ope,999999)
+                
     def writeSolution(self):
         print("{}".format(len(self.operations)))
         
@@ -777,7 +776,8 @@ class Asprova2:
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
-        """ 
+        
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -813,15 +813,16 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
+        
         """
         
     def run(self):
         self.readProblem()
         self.solve()
         self.checkResult()
-        self.backfill()
         self.writeSolution()
 
 if __name__ == '__main__':
     asprova2 = Asprova2()
     asprova2.run()
+
