@@ -667,7 +667,8 @@ class Asprova2:
                     if(tar.m != now_m): # 別のマシン部分まで到達したら終了
                         break
                     
-                    if(not(tar_b.i == tar.i == tar_a.i)): #段取り時間に変更が出る場合は（面倒なので）スルー
+                    if( abs(tar.i - tar_b.i)%3 != 0 or abs(tar_a.i - tar.i)%3 != 0):
+                    #if(not(tar_b.i == tar.i == tar_a.i)): #段取り時間に変更が出る場合は（面倒なので）スルー
                         continue
                     
                     if(tar.backflg or tar_b.backflg): #一度backfillされている場合もスルー
@@ -680,7 +681,8 @@ class Asprova2:
                     # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
                     # 判定はもう少し複雑にできるけどとりあえずシンプルに
                     if(tar.order_after != None): # 最終工程以外
-                        if(tar.order_after.t1 >= after_t1 and tar.run < space and ope.i == tar.i == tar_b.i):
+                        #if(tar.order_after.t1 >= after_t1 and tar.run < space and ope.i == tar.i == tar_b.i):
+                        if(tar.order_after.t1 >= after_t1 and tar.run < space and abs(ope.i - tar.i)%3 == 0):
                             if(firstfit == None):
                                 firstfit = tar
                                 bestfit = tar
@@ -693,7 +695,7 @@ class Asprova2:
                             # 繰り返せるけどとりあえずbreak
                     
                     else: # 最終工程
-                        if(tar.order.d >= after_t1 and tar.run < space and ope.i == tar.i == tar_b.i):
+                        if(tar.order.d >= after_t1 and tar.run < space and abs(ope.i - tar.i)%3 == 0):
                             if(firstfit == None):
                                 firstfit = tar
                                 bestfit = tar
@@ -707,13 +709,32 @@ class Asprova2:
                             # 繰り返せるけどとりあえずbreak
                 
                 if(bestfit != None):
+                    
+                    # 時間の更新
                     bestfit.t3 = after_t1
                     bestfit.t2 = bestfit.t3 - bestfit.run
                     bestfit.t1 = bestfit.t2
+                    
+                    # 前後関係の更新
+                    tmp_before = bestfit.machine_before
+                    tmp_after = bestfit.machine_after
+                    ope_after = ope.machine_after
+                    
+                    ope.machine_after.machine_before = bestfit
+                    ope.machine_after = bestfit
+                    
+                    if(bestfit.machine_before != None):
+                        bestfit.machine_before.machine_after = tmp_after
+                    if(bestfit.machine_after != None):
+                        bestfit.machine_after.machine_before = tmp_before
+                    
+                    bestfit.machine_after = ope_after
+                    bestfit.machine_before = ope
+                    
+                    # 状態の更新
                     bestfit.forwardflg = True
                     mfound = True
                     count += 1
-                    #print("success")
                     #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
@@ -838,8 +859,10 @@ class Asprova2:
                     ope.machine_before.machine_after = bestfit
                     ope.machine_before = bestfit
                     
-                    bestfit.machine_before.machine_after = tmp_after
-                    bestfit.machine_after.machine_before = tmp_before
+                    if(bestfit.machine_before != None):
+                        bestfit.machine_before.machine_after = tmp_after
+                    if(bestfit.machine_after != None):
+                        bestfit.machine_after.machine_before = tmp_before
                     
                     bestfit.machine_before = ope_before
                     bestfit.machine_after = ope
@@ -855,18 +878,21 @@ class Asprova2:
                 
     def lco(self): # 局所クラスタリング組織化法
         
+        # ope自身と1つ前の割り付けとの入れ替えを考える
         for ope in self.operations:
-            
-            # うしろのマシンがなければ対象外
+            continue
+            """
+            # 1つまえに割り付けられていなければ対象外
             if(ope.machine_before == None):
                 continue
             
-            #if(ope.machine_before.i ):
-            #    continue
+            # 段取り時間が変化しうる場合は対象外
+            if(ope.dan != 0 or ope.machine_before.dan != 0 ):
+                continue
             
-            #if(ope.order_after != None):
-            #    if(ope.order_after.t1 < ope.t1 + ope.dantime + )
-    
+            if(ope.order_after != None):
+                if(ope.order_after.t1 < ope.t1 + ope.dantime + )
+            """
         
     def checkResult(self): #依存関係を元に時間を調整する
     
@@ -920,8 +946,12 @@ class Asprova2:
         
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
-        for i in range(5):
+        for i in range(10):
+            #self.forwardfill()
             self.backfill()
+            #if(i == 2 or i == 8):
+                
+            #    self.forwardfill()
 
         #self.forwardfill()
 
@@ -936,7 +966,7 @@ class Asprova2:
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
-        for i in range(3):
+        for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             for ope in self.operations:
                 time = self.adjustStart(ope,999999)
@@ -961,9 +991,9 @@ class Asprova2:
             #k = operation.t3
             #print(operation.t1 - k)
             #k = operation.t3
-        """
-        #print(brank)
         
+        #print(brank)
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -999,8 +1029,8 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        
         """
+        
         
     def run(self):
         self.readProblem()
