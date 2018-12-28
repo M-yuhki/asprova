@@ -9,6 +9,7 @@ import sys
 import fileinput
 import operator
 from operator import itemgetter, attrgetter
+import random
 
 class Order:
     def __init__(self, r, i, e, d, q):
@@ -190,7 +191,7 @@ class Asprova2:
             bom.mworth = self.mnum[bom.m]
             
         # シミュレーションの際に考慮する傾向
-        # 遅延のおよその平均値を10000としておく
+        # 遅延のおよその平均値を30000としておく
         ave_delay = 30000
         self.AB1 = self.A1*pow(ave_delay,self.B1)
         self.AB2 = self.A2*pow(ave_delay,self.B2)
@@ -227,10 +228,14 @@ class Asprova2:
         
         minm3 = -1
         minnum3 = 99999999999
+        
+        s = 0
 
         # BOMを順番に見ていく
         for bom in self.boms:
             if (bom.i == i and bom.p == p): # 対応できるBOMである
+                
+                s += 1 
                 
                 if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
                     return bom.m
@@ -254,13 +259,22 @@ class Asprova2:
         else:
             return minm3
     
+    #def selectOrder(self,a,b):
     def selectOrder(self):
         
         # orderは更新されるのでsortし直す
         
-        self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
+        #d,rだとWA吐かれる
+        #e,drest,rとかが良さそう
+        self.orders = sorted(self.orders, key=attrgetter('e','drest'),reverse = True)
+        #self.orders = sorted(self.orders, key=attrgetter('lim'))
         
+        """
+        # ランダム要素を加える場合
+        tmp = self.orders[a]
+        self.orders[a] = self.orders[b]
+        self.orders[b] = tmp
+        """
         
         # 現在までに割り当てた工程の開始時間より
         # 後に終わりうるものから選択する
@@ -308,12 +322,12 @@ class Asprova2:
 
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
-        self.orders = sorted(self.orders, key=attrgetter('lim'))
+        # self.orders = sorted(self.orders, key=attrgetter('lim'))
         self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
-        
+        """
         # BOMをsortする
         # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
-        """
+        
         if(self.A1 == max(self.A1,self.A2,self.A3)):
             self.boms = sorted(self.boms, key = attrgetter("d","cd","c"))
         # それ以外の場合はcdを優先し、第二項目は平均が大きい項目を考慮
@@ -331,6 +345,17 @@ class Asprova2:
         self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
         self.boms = sorted(self.boms, key = attrgetter("c","d"))
         
+        """
+        ランダム要素を加えてみる
+        a = random.randint(0,self.R-1)
+        b = random.randint(0,self.R-1)
+        print("a{} b{}".format(a,b))
+        
+        for order in self.orders:
+            order.prest = order.p
+        
+        self.operations = []
+        """    
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
@@ -338,6 +363,7 @@ class Asprova2:
             #order = self.orders[j]
             
             order = self.selectOrder()
+            #order = self.selectOrder(a,b)
             r = order.r;
             i = order.i;
             e = order.e;
@@ -412,6 +438,7 @@ class Asprova2:
             """
             # 後ろからわりつける場合はここから
             m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
+            
             
             if m == -1:
                 continue
@@ -850,10 +877,9 @@ class Asprova2:
             #    pret = 70000
             
             self.checkOver(ope,pret)
-        
+        """
         # stendを更新する 
         # stendはオーダごとの値なので相関を見ていなかった
-        """
         for ope in self.operations:
             if(ope.p == 0):
                 stend[ope.r] = ope.t1 - ope.order.e # そのオーダを前に動かせるだけの時間
@@ -863,6 +889,7 @@ class Asprova2:
                 # 負の値を示すなら遅延は発生していない
                 stend[ope.r] = min(stend[ope.r],(ope.t3 - ope.order.d))
         
+        """
         # 工程を前に詰める再構成と、後ろに下げる再構成を繰り返す
         
         # ここのループをたくさんやれば良いのでは？
@@ -872,7 +899,6 @@ class Asprova2:
             for ope in self.operations:
                 if(stend[ope.r] > 0):
                     self.adjustDelay(ope,stend[ope.r])
-        """
         
         # 遅延時間を登録
         for ope in self.operations:
@@ -882,9 +908,6 @@ class Asprova2:
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
         self.backfill()
-        #print("*********************************************")
-        self.backfill()
-        #self.forwardfill()
 
         # 前に埋めるか後ろに埋めるかは
         # trendで判定したら良さそう
@@ -909,7 +932,7 @@ class Asprova2:
         self.operations = sorted(self.operations, key = attrgetter("m","t1"))
         
         k = 0
-        #brank = [0 for i in range(self.M)]
+        brank = [0 for i in range(self.M)]
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
@@ -932,6 +955,7 @@ class Asprova2:
                 k += max(0, operation.t3 - operation.order.d)
         print("着手遅れ...多い方が良い {}".format(j))
         print("納期遅れ...少ない方が良い {}".format(k))
+        
         
         # 各オーダ内でのエラーチェック
         self.operations = sorted(self.operations, key = attrgetter("r","p"))
