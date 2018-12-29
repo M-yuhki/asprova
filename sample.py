@@ -513,6 +513,8 @@ class Asprova2:
             if(mToPreviousI[m] != -1):
                 mToPreviousOpe[m].t1 -= dantime # t1に段取り時間を追加
                 mToPreviousOpe[m].order.drest  -= dantime # drestから段取り時間を引く
+
+                mToPreviousOpe[m].dan = dantime
                 mToPreviousOpe[m].order.dflg = True # dflgをTrueにする
                 
                 # 依存関係の登録
@@ -975,41 +977,85 @@ class Asprova2:
                 before_t3 = ope.t3
                 before_i = ope.i
     
-    """            
+               
     def lco(self): # 局所クラスタリング組織化法
-        
+        count = 0
         # ope自身と1つ前の割り付けとの入れ替えを考える
         for ope in self.operations:
             
-            
-            # 1つまえに割り付けられていなければ対象外
+            # 同一マシンの1つまえに割り付けられていなければ対象外
             if(ope.machine_before == None):
                 continue
+            
             before = ope.machine_before
             
             # 段取り時間が変化しうる場合は対象外
             if(ope.dan != 0 or before.dan != 0 ):
                 continue
+
+            # それぞれの制限時間を、条件に基づき登録
+            # opeの交換後の開始すべき時刻
+            if(ope.order_before != None):
+                ope_start = ope.order_before.t3
+            else:
+                ope_start = ope.order.e
  
-         
-            # 双方最終工程の場合
-            if(ope.order_after == None and before.order_after == None):
-                
-                if(ope.t3 > before.order.d or ope.order_before.t3 > before.t1 or ope.order.delay < 0):
-                    continue
-             
-            # opeのみ最終工程の場合    
-            elif(ope.order_after == None and before.order_after != None):
-                #入れ替えた後に干渉したらout 
-                if(ope.t3 > before.order_after.t1 or ope.order_before.t3 > before.t1):
-                    continue
+            # beforeの交換後の終了すべき時刻
+            if(before.order_after != None):
+                before_end = before.order_after.t1
+            else:
+                before_end = ope.order.d
             
-            # beforeのみ最終工程の場合
-            elif(ope.order_after != None and before.order_after == None):
+            # 交換後、それぞれの前後の時刻に干渉してしまうなら対象外
+            if(before.t1 < ope_start or ope.t3 > before_end):
                 continue
-            # 双方
-            elif
-    """
+ 
+            # beforeのみ最終工程、あるいはopeのみ1だと対象外
+            if(before.p == before.order.p or ope.order.p == 0):
+                continue
+            
+            # 双方とも遅延していない場合は対象外
+            if(ope.order.delay <= 0 and before.order.delay <= 0):
+                continue
+    
+            # 交換した時の納期に対する時間がより良くなれば交換する
+            if( (ope.order.d - ope.t3) + (before.order.d - before.t3) < (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) ) ):
+                #if(before.machine_before != None and ope.machine_after != None):
+                #    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(before.machine_before.t3,before.t1,before.t3,ope.t1,ope.t3,ope.machine_after.t1))
+                
+                # 時間の更新
+                tmp_t3 = ope.t3
+                
+                ope.t1 = before.t1
+                ope.t2 = ope.t1
+                ope.t3 = ope.t2 + ope.run
+                
+                before.t3 = tmp_t3
+                before.t2 = tmp_t3 - before.run
+                before.t1 = before.t2
+                
+                
+                # ポインタのつなぎ変え
+                if(ope.machine_after != None):
+                    ope.machine_after.machine_before = before
+                    before.machine_after = ope.machine_after
+                if(before.machine_before != None):
+                    before.machine_before.machine_after = ope
+                    ope.machine_before = before.machine_before
+            
+                ope.machine_after = before
+                before.machine_before = ope
+                
+                #print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
+                #print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
+                #print("")
+                
+                #if(ope.t3 != before.t1):
+                    #print("ERROR!!! ope.run {} , before.run{}".format(ope.run,before.run))
+                    #print("ERROR!!! ope.dan {} , before.dan{}".format(ope.dan,before.dan))
+                    #print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
+                    #print("")
+                count += 1
                 
         
     def checkResult(self): #依存関係を元に時間を調整する
@@ -1063,14 +1109,22 @@ class Asprova2:
                 ope.order.delay = ope.t3 - ope.order.d
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
-        for i in range(50):
+        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+
+        
+        #self.lco()
+        
+        for i in range(30):
             #self.forwardfill()
 
             self.backfill()
+            self.lco()
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
                 time = self.adjustDelay(ope,999999)
 
+        #self.lco()
+        
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
@@ -1098,10 +1152,6 @@ class Asprova2:
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #brank[operation.m] = operation.t1 - k
-            #print("{}  {}".format(operation.m+1,operation.t1 - k))
-            #k = operation.t3
-            
-        
         #print(brank)
         """
         
@@ -1140,8 +1190,8 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        
         """
+        
         
     def run(self):
         self.readProblem()
