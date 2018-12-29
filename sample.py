@@ -56,7 +56,7 @@ class Bom:
         self.mworth = -1
 
 class Operation:
-    def __init__(self, m, r, p, t1, t2, t3, i, order):
+    def __init__(self, m, r, p, t1, t2, t3, i, order, c,d,mworth):
         # 設備番号           : Machine number
         self.m = m
         # オーダ番号         : Order number
@@ -87,6 +87,13 @@ class Operation:
         # backfillがその回で適用されたかの判定
         self.backflg = False
         self.forwardflg = False
+        
+        # 使用したマシンの価値
+        self.mworth = mworth
+        
+        # 使用したマシンのcとd
+        self.c = c
+        self.d = d
 
 class Asprova2:
     def __init__(self):
@@ -128,6 +135,8 @@ class Asprova2:
         self.AB2 = 0
         self.AB3 = 0
         
+        self.bunsan_c = 0
+        self.bunsan_d = 0
 
     def readProblem(self):
         n = 0
@@ -194,6 +203,7 @@ class Asprova2:
             
         # マシンごとの利用時刻
         self.machinetime = [-1 for i in range(self.M)]
+        
             
         # シミュレーションの際に考慮する傾向
         # 遅延のおよその平均値を10000としておく
@@ -208,6 +218,23 @@ class Asprova2:
             self.Trend = 1 # 段取り解消傾向
         else:
             self.Trend = 3 # ボーナス最大化傾向
+            
+        # cとdの分散を計算
+        ave_c = int(sum(self.C)/self.M)
+        
+        total_c = 0
+        for c in self.C:
+            total_c += (c - ave_c)*(c - ave_c)
+        self.bunsan_c = int(total_c/self.M)
+        
+        # cとdの分散を計算
+        ave_d = int(sum(self.D)/self.M)
+        
+        total_d = 0
+        for d in self.D:
+            total_d += (d - ave_d)*(d - ave_d)
+        self.bunsan_d = int(total_d/self.M)
+        
 
     def time(self, m, i, p):
         for bom in self.boms:
@@ -262,7 +289,7 @@ class Asprova2:
                     if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
                         return bom.m
                     
-                    elif(abs(i - ope[bom.m].i)%3 == 0 and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                    elif((abs(i - ope[bom.m].i)%3 == 0 or bom.d == 0) and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
                         maxtime1 = self.machinetime[bom.m]
                         minm1 = bom.m
                     
@@ -288,15 +315,7 @@ class Asprova2:
         #self.orders = sorted(self.orders, key=attrgetter('lim'))
         #cが小さいとe後の方が良い？
         
-        # cの分散を元に分岐してみる
-        ave = int(sum(self.C)/self.M)
-        
-        test = 0
-        for c in self.C:
-            test += (c - ave)*(c - ave)
-        bunsan = int(test/self.M)
-        
-        if(bunsan <= 5000):
+        if(self.bunsan_c <= 5000):
             self.orders = sorted(self.orders, key=attrgetter('drest','e','r'),reverse = True)
         else:
             self.orders = sorted(self.orders, key=attrgetter('e','drest','r'),reverse = True)
@@ -373,8 +392,8 @@ class Asprova2:
         
         # mworthが下の方が遅れが減る？
         
-        self.boms = sorted(self.boms, key = attrgetter("c","d"))
-        self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
+        #self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        self.boms = sorted(self.boms, key = attrgetter("mworth"))
         
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
@@ -487,7 +506,7 @@ class Asprova2:
             t1 = t2
             
             # orderを追加
-            ope = Operation(m, r, order.prest, t1, t2, t3, i, order)
+            ope = Operation(m, r, order.prest, t1, t2, t3, i, order,self.C[m],self.D[m], self.mnum[m])
             self.operations.append(ope)
             
             # 既にそのマシンに工程がわりあてられていたら、そのオーダのパラメータを更新
@@ -626,7 +645,13 @@ class Asprova2:
         # timeは、解消したい遅延時間
         # 早めることができるtimeの時間を更新
         if(ope.p == 0):
-            time = min(time, ope.t1 - ope.order.e)
+            
+            if(self.A3 >= self.A2*1.1 and self.B3 >= self.B2):
+            #time = 0
+                time = 0
+            else:
+                time = min(time, ope.t1 - ope.order.e)
+            
             #print("ope.t1-before.t3:{}".format(ope.t1-before.t3))
         if(ope.machine_before != None):
             time = min(time, ope.t1 - ope.machine_before.t3)
@@ -644,6 +669,10 @@ class Asprova2:
         ope.t1 -= time
         ope.t2 -= time
         ope.t3 -= time
+        
+        #if(time > 0):
+            #print("Delay:  M:m {} r {} p {} time {}".format(ope.m+1,ope.r+1,ope.p+1,time))
+            
         return time
 
     # 隙間を埋めて開始を遅らせる関数
@@ -653,6 +682,7 @@ class Asprova2:
         if(ope.p == ope.order.p):
         #if(ope.p != 0):
             time = min(time, ope.order.d - ope.t3)
+            #time = 0
         
         if(ope.machine_after != None):
             time = min(time, ope.machine_after.t1 - ope.t3)
@@ -666,6 +696,9 @@ class Asprova2:
         ope.t1 += time
         ope.t2 += time
         ope.t3 += time
+        #if(time > 0):
+        #    print("adjast:  M:m {} r {} p {} time {}".format(ope.m+1,ope.r+1,ope.p+1,time))
+            
         return time 
 
     # forwardfillで間を埋める関数
@@ -797,10 +830,13 @@ class Asprova2:
     # backfillで間を埋める関数
     def backfill(self):    
         # マシン順→実行順にsort
-        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        #self.operations = sorted(self.operations, key = attrgetter("m","t1"))
+        self.operations = sorted(self.operations, key = attrgetter("t1","c"))
+        self.operations = sorted(self.operations, key = attrgetter("mworth","m"),reverse = True)
         
         # フラグの初期化
         for ope in self.operations:
+            #print(vars(ope))
             ope.backflg = False
         
         before_t3 = -1 # 直前の工程の完了時間
@@ -933,7 +969,7 @@ class Asprova2:
                     # フラグの更新
                     bestfit.backflg = True
                     mfound = True
-                    #print("HIT:  M:m {} r {} p {} t1 {} **************".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
+                    #print("HIT:  M:m {} r {} p {} t1 {} ".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
                 before_t3 = ope.t3
@@ -1025,32 +1061,24 @@ class Asprova2:
         for ope in self.operations:
             if(ope.p == ope.order.p):
                 ope.order.delay = ope.t3 - ope.order.d
-        
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
-        for i in range(10):
+        for i in range(50):
             #self.forwardfill()
+
             self.backfill()
-            #if(i == 2 or i == 8):
-                
-            #    self.forwardfill()
+            self.operations = sorted(self.operations, key = attrgetter("t3"))
+            for ope in self.operations:
+                time = self.adjustDelay(ope,999999)
 
-        #self.forwardfill()
-
-        # 前に埋めるか後ろに埋めるかは
-        # trendで判定したら良さそう
-        
-        # 前に詰める
-        #self.operations = sorted(self.operations, key = attrgetter("t1"))
-            
-        #for ope in self.operations:
-        #    time = self.adjustDelay(ope,999999)        
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
         for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
+            #self.forwardfill()
             for ope in self.operations:
+                #print("{}".format(ope.t3))
                 time = self.adjustStart(ope,999999)
         
         if(self.A2 < self.A3 and self.B2< self.B3):
@@ -1070,13 +1098,13 @@ class Asprova2:
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #brank[operation.m] = operation.t1 - k
+            #print("{}  {}".format(operation.m+1,operation.t1 - k))
             #k = operation.t3
-            #print(operation.order.delay)
-            #k = operation.t3
+            
         
         #print(brank)
-        
         """
+        
         # 総遅延時間のチェック
         j = 0
         k = 0
