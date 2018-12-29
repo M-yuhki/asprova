@@ -225,6 +225,9 @@ class Asprova2:
         
         maxm0 = -1
         maxtime0 = -99999999999
+        maxtime1 = -99999999999
+        maxtime2 = -99999999999
+        maxtime3 = -99999999999
         
         minm1 = -1
         minnum1 = 99999999999
@@ -237,7 +240,7 @@ class Asprova2:
         
         #段取り時間ペナルティ係数が極めて小さい場合、段取り時間を考慮しない
         # 段取りのペナルティ自体はなくても他が煽りを受けそうだからなしか？
-        if(self.A1 <= 0.1 or self.B1 <= 0.2):
+        if(self.A1 > 10000000):
             for bom in self.boms:
                 if(bom.i == i and bom.p == p):
                     
@@ -259,16 +262,16 @@ class Asprova2:
                     if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
                         return bom.m
                     
-                    elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum1): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
-                        minnum1 = num[bom.m]
+                    elif(abs(i - ope[bom.m].i)%3 == 0 and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                        maxtime1 = self.machinetime[bom.m]
                         minm1 = bom.m
                     
-                    elif(abs(i - ope[bom.m].i)%3 == 1 and  num[bom.m] < minnum2):
-                        minnum2 = num[bom.m]
+                    elif(abs(i - ope[bom.m].i)%3 == 1 and maxtime2 < self.machinetime[bom.m]):
+                        maxtime2 = self.machinetime[bom.m]
                         minm2 = bom.m
                     
-                    elif(num[bom.m] < minnum3):
-                        minnum3 = num[bom.m]
+                    elif(maxtime3 < self.machinetime[bom.m]):
+                        maxtime3 = self.machinetime[bom.m]
                         minm3 = bom.m
         
         if(minm1 != -1):
@@ -368,8 +371,10 @@ class Asprova2:
         # 段取りは解消できるからcだけでsortする
         # 取り扱るBOMが多いマシンから選択されやすくする
         
-        self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
+        # mworthが下の方が遅れが減る？
+        
         self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        self.boms = sorted(self.boms, key = attrgetter("mworth"),reverse = True)
         
         
         # オーダを1つずつ処理していくのではなく各工程毎に処理
@@ -933,24 +938,43 @@ class Asprova2:
                 #before値の更新       
                 before_t3 = ope.t3
                 before_i = ope.i
-                
+    
+    """            
     def lco(self): # 局所クラスタリング組織化法
         
         # ope自身と1つ前の割り付けとの入れ替えを考える
         for ope in self.operations:
-            continue
-            """
+            
+            
             # 1つまえに割り付けられていなければ対象外
             if(ope.machine_before == None):
                 continue
+            before = ope.machine_before
             
             # 段取り時間が変化しうる場合は対象外
-            if(ope.dan != 0 or ope.machine_before.dan != 0 ):
+            if(ope.dan != 0 or before.dan != 0 ):
                 continue
+ 
+         
+            # 双方最終工程の場合
+            if(ope.order_after == None and before.order_after == None):
+                
+                if(ope.t3 > before.order.d or ope.order_before.t3 > before.t1 or ope.order.delay < 0):
+                    continue
+             
+            # opeのみ最終工程の場合    
+            elif(ope.order_after == None and before.order_after != None):
+                #入れ替えた後に干渉したらout 
+                if(ope.t3 > before.order_after.t1 or ope.order_before.t3 > before.t1):
+                    continue
             
-            if(ope.order_after != None):
-                if(ope.order_after.t1 < ope.t1 + ope.dantime + )
-            """
+            # beforeのみ最終工程の場合
+            elif(ope.order_after != None and before.order_after == None):
+                continue
+            # 双方
+            elif
+    """
+                
         
     def checkResult(self): #依存関係を元に時間を調整する
     
@@ -1047,7 +1071,7 @@ class Asprova2:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #brank[operation.m] = operation.t1 - k
             #k = operation.t3
-            #print(operation.t1 - k)
+            #print(operation.order.delay)
             #k = operation.t3
         
         #print(brank)
