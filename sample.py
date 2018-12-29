@@ -116,6 +116,7 @@ class Asprova2:
         self.C=[]
         # 設備mの段取り時間係数 : Machine setup time multiplier
         self.D=[]
+        
         self.boms = []
         self.orders = []
         self.operations = []
@@ -191,6 +192,9 @@ class Asprova2:
         for bom in self.boms:
             bom.mworth = self.mnum[bom.m]
             
+        # マシンごとの利用時刻
+        self.machinetime = [-1 for i in range(self.M)]
+            
         # シミュレーションの際に考慮する傾向
         # 遅延のおよその平均値を10000としておく
         ave_delay = 30000
@@ -219,7 +223,8 @@ class Asprova2:
     
     def selectMachine(self,i,p,num,ope):
         
-        minm0 = -1
+        maxm0 = -1
+        maxtime0 = -99999999999
         
         minm1 = -1
         minnum1 = 99999999999
@@ -229,25 +234,42 @@ class Asprova2:
         
         minm3 = -1
         minnum3 = 99999999999
-
-        # BOMを順番に見ていく
-        for bom in self.boms:
-            if (bom.i == i and bom.p == p): # 対応できるBOMである
+        
+        #段取り時間ペナルティ係数が極めて小さい場合、段取り時間を考慮しない
+        # 段取りのペナルティ自体はなくても他が煽りを受けそうだからなしか？
+        if(self.A1 <= 0.1 or self.B1 <= 0.2):
+            for bom in self.boms:
+                if(bom.i == i and bom.p == p):
+                    
+                    if(num[bom.m] == 0): #そのマシンにまだ一つのオーダも割り当てられていない場合
+                        return bom.m
+                    
+                    elif(maxtime0 < self.machinetime[bom.m] ):
+                        maxm0 = bom.m
+                        maxtime0 = self.machinetime[bom.m]
+            
+            return maxm0
+                    
+                    
+        else:
+            # BOMを順番に見ていく
+            for bom in self.boms:
+                if (bom.i == i and bom.p == p): # 対応できるBOMである
                 
-                if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
-                    return bom.m
+                    if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
+                        return bom.m
                     
-                elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum1): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
-                    minnum1 = num[bom.m]
-                    minm1 = bom.m
+                    elif(abs(i - ope[bom.m].i)%3 == 0 and num[bom.m] < minnum1): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                        minnum1 = num[bom.m]
+                        minm1 = bom.m
                     
-                elif(abs(i - ope[bom.m].i)%3 == 1 and  num[bom.m] < minnum2):
-                    minnum2 = num[bom.m]
-                    minm2 = bom.m
+                    elif(abs(i - ope[bom.m].i)%3 == 1 and  num[bom.m] < minnum2):
+                        minnum2 = num[bom.m]
+                        minm2 = bom.m
                     
-                elif(num[bom.m] < minnum3):
-                    minnum3 = num[bom.m]
-                    minm3 = bom.m
+                    elif(num[bom.m] < minnum3):
+                        minnum3 = num[bom.m]
+                        minm3 = bom.m
         
         if(minm1 != -1):
             return minm1
@@ -384,9 +406,14 @@ class Asprova2:
             # その品目の次の工程
             if((p - prest) != 0):
                 x = self.searchOpe(r,(p - prest - 1))
-                x.order_after.append(ope)
-            if(mToPreviousI[m] != -1):
-                mToPreviousOpe[m].machine_after.append(ope)
+                x.order_after = ope
+                ope.order_before = x
+
+            if(mToPreviousOpe[m] != -1):
+                mToPreviousOpe[m].machine_after = ope
+                ope.machine_before = mToPreviousOpe[m]
+            else:
+                print("m{} r{} p{}".format(m+1,ope.r+1,ope.p+1))
 
             # NumOrderの更新
             mToNumorder[m] += 1
@@ -407,6 +434,8 @@ class Asprova2:
             
             ol -= 1
             if(ol == 0):
+                
+                
                 break
             
             # 前から探す場合ここまで
@@ -415,7 +444,7 @@ class Asprova2:
             # 後ろからわりつける場合はここから
             m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
             
-            if m == -1:
+            if (m == -1):
                 continue
             
             if(mToPreviousI[m] == -1): #そのマシンにオーダが割り付けられていない場合
@@ -458,8 +487,10 @@ class Asprova2:
                 tar.order_before = ope
             
             
-            # NumOrderの更新
+            # NumOrderとmachineTImeの更新
             mToNumorder[m] += 1
+            self.machinetime[m] = t1
+            
 
             
             # 対象としたオーダのdrestとdflgを更新
@@ -480,9 +511,7 @@ class Asprova2:
                 break
             # 後ろから探す場合ここまで
             
-            
         
-        #print(checkOrder)
      
         """
             # 各注文の最初の工程から設備と時間を割り付けていく : Assign operation from the first of each order to machine and time
@@ -626,8 +655,6 @@ class Asprova2:
         after_t1 = -1 # 直後の工程の開始時間
         now_m = -1 # 現在のマシンの番号
         mfound = False # そのマシンで一度でも見つかったか
-        count = 0
-        totals = 0
         # forwardfillないの判定を容易にするためにjでループ回す
         # 一番最後のオーダはspaceが発生することはないので無視
         for j in range(len(self.operations)): # backfill内部の処理をしやすくするためにjでループ回す
@@ -734,7 +761,6 @@ class Asprova2:
                     # 状態の更新
                     bestfit.forwardflg = True
                     mfound = True
-                    count += 1
                     #print("HIT:  M:m {} r {} p {} t1 {}".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
@@ -753,8 +779,6 @@ class Asprova2:
         before_t3 = -1 # 直前の工程の完了時間
         now_m = -1 # 現在のマシンの番号
         mfound = False # そのマシンで一度でも見つかったか
-        count = 0
-        totals = 0
         # backfillないの判定を容易にするためにjでループ回す
         # 一番最後のオーダはspaceが発生することはないので無視
         for j in range(len(self.operations)): # backfill内部の処理をしやすくするためにjでループ回す
@@ -765,6 +789,7 @@ class Asprova2:
                 now_m = ope.m
                 mfound = False
                 before_t3 = ope.t3
+                before_i = ope.i
             
             
             elif(not(mfound)):
@@ -773,7 +798,6 @@ class Asprova2:
                 #print(" M:m {} r {} p {} time:{}({} ~ {})".format(ope.m+1,ope.r+1,ope.p+1,space,before_t3,ope.t1))
                 p = j #これから見るジョブのindex
 
-                firstfit = None # 最初に見つけたもの
                 bestfit = None # もっとも好条件なものを選ぶ
                 
                 #if(space > 0):
@@ -785,16 +809,24 @@ class Asprova2:
                     if(p >= len(self.operations)): # 最終マシン用の終了判定
                         break
                     
-                    #ターゲットとなるマシンの情報を登録
+                    #ターゲットとなるオーダの情報を登録
                     
-                    tar_b = self.operations[p-1]
-                    tar = self.operations[p]
+                    tar_b = self.operations[p-1] # ターゲットの1つ前のオーダ
+                    tar = self.operations[p] # ターゲットのオーダ
                     
-                    if(p == len(self.operations)):
-                        tar_a = self.operations[p+1]
-                    else:
+                
+                    # ターゲットの1つ次のオーダ
+                    # 各マシンの最後のオーダの場合はそれ自身を登録しておく
+                    # tar_aは段取り時間の影響をみるだけなのでtar_a=tarでも問題ない
+                    
+                    if(p >= len(self.operations) - 1):
                         tar_a = tar
-                        
+                    elif(self.operations[p+1].m != now_m):
+                        tar_a = tar
+                    else:
+                        tar_a = self.operations[p+1]
+                    
+                    
                     if(tar.m != now_m): # 別のマシン部分まで到達したら終了
                         break
                     
@@ -812,16 +844,18 @@ class Asprova2:
                         
                     # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
                     # 判定はもう少し複雑にできるけどとりあえずシンプルに
+                    # 段取り時間の部分は、opeでなくbeforeと判定すればOk
                     if(tar.order_before != None): # 2工程目以降
                         #if(tar.order_before.t3 <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                        if(tar.order_before.t3 <= before_t3 and tar.run < space and abs(ope.i - tar.i)%3 == 0):
-                            if(firstfit == None):
-                                firstfit = tar
+                        if(tar.order_before.t3 <= before_t3 and tar.run < space and abs(tar.i - before_i)%3 == 0):
+                            
+                            # 最初に見つけたものを登録しておく
+                            if(bestfit == None):
                                 bestfit = tar
                             
-                            else: # 遅延がもっとも解消される
+                            else: # spaceになるべくfitするものを選ぶ
                                 
-                                if(bestfit.run < tar.run):
+                                if(bestfit.run <= tar.run):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
@@ -829,23 +863,25 @@ class Asprova2:
                     
                     else: # 1工程目
                         #if(tar.order.e <= before_t3 and tar.run < space and ope.i == tar.i == tar_a.i):
-                        if(tar.order.e <= before_t3 and tar.run < space and abs(ope.i - tar.i)%3 == 0):
-                            if(firstfit == None):
-                                firstfit = tar
+                        if(tar.order.e <= before_t3 and tar.run < space and abs(tar.i - before_i)%3 == 0):
+                            if(bestfit == None):
                                 bestfit = tar
                             
-                            
-                            else:
-                                if(bestfit.run < tar.run):
+                            else: # spaceになるべくfitするものを選ぶ
+                                if(bestfit.run <= tar.run):
                                     bestfit = tar
 
                             #print("HIT***tar.m:{},tar.r:{},tar.p:{}".format(tar.m,tar.r,tar.p))
                             # 繰り返せるけどとりあえずbreak
                 
+                # bestfitがNoneでない、つまりbackfillできるものが見つかっていればbackfillを適用
                 if(bestfit != None):
                     #print("HIT:  M:m {} r {} p {} t1 {} **************".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
+                    #print("OPE:  M:m {} r {} p {} t1 {} {}**************".format(ope.m+1,ope.r+1,ope.p+1,ope.t1,ope.machine_before))
+                    
                     #if(bestfit.m == 1):
                        #print("BEFORE:  M:m {} r {} p {} t1 {} **************".format(bestfit.machine_before.m+1,bestfit.machine_before.r+1,bestfit.machine_before.p+1,bestfit.machine_before.t3))
+                       
                     # 時間の更新
                     bestfit.t1 = before_t3
                     bestfit.t2 = bestfit.t1
@@ -870,11 +906,11 @@ class Asprova2:
                     # フラグの更新
                     bestfit.backflg = True
                     mfound = True
-                    count += 1
                     #print("HIT:  M:m {} r {} p {} t1 {} **************".format(bestfit.m+1,bestfit.r+1,bestfit.p+1,bestfit.t1))
                        
                 #before値の更新       
                 before_t3 = ope.t3
+                before_i = ope.i
                 
     def lco(self): # 局所クラスタリング組織化法
         
@@ -1029,8 +1065,8 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        """
         
+        """
         
     def run(self):
         self.readProblem()
