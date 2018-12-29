@@ -282,8 +282,22 @@ class Asprova2:
         
         # orderは更新されるのでsortし直す
         
-        self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('e', 'r'),reverse = True)
+        #self.orders = sorted(self.orders, key=attrgetter('lim'))
+        #cが小さいとe後の方が良い？
+        
+        # cの分散を元に分岐してみる
+        ave = int(sum(self.C)/self.M)
+        
+        test = 0
+        for c in self.C:
+            test += (c - ave)*(c - ave)
+        bunsan = int(test/self.M)
+        
+        if(bunsan <= 5000):
+            self.orders = sorted(self.orders, key=attrgetter('drest','e','r'),reverse = True)
+        else:
+            self.orders = sorted(self.orders, key=attrgetter('e','drest','r'),reverse = True)
+        #else:
         
         
         # 現在までに割り当てた工程の開始時間より
@@ -332,8 +346,10 @@ class Asprova2:
 
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
-        self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
+        #self.orders = sorted(self.orders, key=attrgetter('lim'))
+        self.orders = sorted(self.orders, key=attrgetter('e','drest', 'r'),reverse = True)
+        #for order in self.orders:
+        #    print(vars(order))
         
         # BOMをsortする
         # 段取り時間ペナルティ係数が遅延ペナルティ係数より大きい場合,dを優先的に見る
@@ -371,6 +387,7 @@ class Asprova2:
             prest = order.prest;
             drest = order.drest;
             erest = order.erest;
+            #print(vars(order))
             
             #選ばれた注文の最後の工程から設備と時間を割り付けていく
             # 利用可能な設備を見つける
@@ -495,8 +512,12 @@ class Asprova2:
             
             # 対象としたオーダのdrestとdflgを更新
             order.drest = t1
-            order.dflg = False
+            order.lim = drest - e
             order.prest -= 1
+            
+            
+            order.dflg = False
+            
             
             # Previous系のパラメータを更新
             mToPreviousT1[m] = t1
@@ -700,6 +721,7 @@ class Asprova2:
                     
                     if(tar.backflg or tar_b.backflg): #一度backfillされている場合もスルー
                         continue
+                    
                     # 各オーダの最初の工程の場合
                     # 1工程目は対象外
                     if(tar.p == 0):
@@ -838,8 +860,8 @@ class Asprova2:
                     if(tar.backflg or tar_a.backflg): #一度backfillされている場合もスルー
                         continue
                     # 各オーダの最初の工程の場合
-                    # 1工程目は対象外
-                    if(tar.p == 0):
+                    # 1工程目は、その品目の工程数が3以上であれば対象外とする
+                    if(tar.p == 0 and tar.order.p >= 3):
                         continue
                         
                     # 間を埋める条件は基本的には"オーダの依存関係が問題ない","実行時間がspaceより短い","段取り時間に変化がない"
@@ -1029,6 +1051,7 @@ class Asprova2:
             #k = operation.t3
         
         #print(brank)
+        
         """
         # 総遅延時間のチェック
         j = 0
