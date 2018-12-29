@@ -10,6 +10,7 @@ import fileinput
 import operator
 from operator import itemgetter, attrgetter
 
+
 class Order:
     def __init__(self, r, i, e, d, q):
         # オーダ番号    : Order number
@@ -1020,9 +1021,15 @@ class Asprova2:
     
             # 交換した時の納期に対する時間がより良くなれば交換する
             if( (ope.order.d - ope.t3) + (before.order.d - before.t3) < (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) ) ):
+                """
+                if(ope.order.e == 0 and before.order.e == 0):
+                    print(vars(ope.machine_before))
+                    print(vars(before.machine_after))
+                    print("{}<{} or {}>{}".format(before.t1 , ope_start , ope.t3 , before_end))
+                    print("{} {} {} {}".format((ope.order.d - ope.t3),(before.order.d - before.t3),(ope.order.d - (before.t1 + ope.run) ), (before.order.d - (ope.t3) )))
                 #if(before.machine_before != None and ope.machine_after != None):
                 #    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(before.machine_before.t3,before.t1,before.t3,ope.t1,ope.t3,ope.machine_after.t1))
-                
+                """
                 # 時間の更新
                 tmp_t3 = ope.t3
                 
@@ -1039,9 +1046,14 @@ class Asprova2:
                 if(ope.machine_after != None):
                     ope.machine_after.machine_before = before
                     before.machine_after = ope.machine_after
+                else:
+                    before.machine_after = None
+                
                 if(before.machine_before != None):
                     before.machine_before.machine_after = ope
                     ope.machine_before = before.machine_before
+                else:
+                    ope.machine_before = None
             
                 ope.machine_after = before
                 before.machine_before = ope
@@ -1049,12 +1061,14 @@ class Asprova2:
                 #print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
                 #print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
                 #print("")
-                
-                #if(ope.t3 != before.t1):
-                    #print("ERROR!!! ope.run {} , before.run{}".format(ope.run,before.run))
-                    #print("ERROR!!! ope.dan {} , before.dan{}".format(ope.dan,before.dan))
-                    #print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
-                    #print("")
+                """
+                if(ope.t3 != before.t1):
+                    print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
+                    print("ERROR!!! ope.run {} , before.run{}".format(ope.run,before.run))
+                    print("ERROR!!! ope.dan {} , before.dan{}".format(ope.dan,before.dan))
+                    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
+                    print("")
+                """
                 count += 1
                 
         
@@ -1066,19 +1080,13 @@ class Asprova2:
         # 工程順にsort
         # こうすることによって2工程目以降のcheckの必要がなくなる
         self.operations = sorted(self.operations, key= attrgetter("p","r"))
-            # まずはbefore方向の依存関係を登録しておく
-            #for j in ope.depend_after:
-            #    j.depend_before.append(ope)
-        
+
+
         for ope in self.operations:
-            # 実質的な操作はcheckOver関数で対応
-            # 最早開始時間に対して頭が出ている場合、下げる
+
             pret = 0
-            # 遅延ボーナスを重視する場合はpretを変更してみる
-            #if(self.Trend == 3):
-            #    pret = 70000
-            
             self.checkOver(ope,pret)
+        
         
         # stendを更新する 
         # stendはオーダごとの値なので相関を見ていなかった
@@ -1111,17 +1119,22 @@ class Asprova2:
         # backfillは、後ろのジョブを前に出す
         self.operations = sorted(self.operations, key = attrgetter("m","t1"))
 
+        #ましんga 20台の時だけLCO読んでみる
+        if(self.M == 20):
+            self.lco()
         
-        #self.lco()
-        
-        for i in range(30):
+        for i in range(10):
             #self.forwardfill()
 
+            
             self.backfill()
-            self.lco()
+            if(self.M == 20):
+                self.lco()
+                
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
                 time = self.adjustDelay(ope,999999)
+        
 
         #self.lco()
         
@@ -1153,8 +1166,8 @@ class Asprova2:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
             #brank[operation.m] = operation.t1 - k
         #print(brank)
-        """
         
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -1190,8 +1203,8 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        """
         
+        """
         
     def run(self):
         self.readProblem()
