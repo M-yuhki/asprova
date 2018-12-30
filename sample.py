@@ -7,6 +7,7 @@
 
 import sys
 import fileinput
+import statistics
 import operator
 from operator import itemgetter, attrgetter
 
@@ -138,6 +139,11 @@ class Asprova2:
         
         self.bunsan_c = 0
         self.bunsan_d = 0
+        
+        self.ave_c = 0
+        self.ave_d = 0
+        
+        self.ave_q = 0
 
     def readProblem(self):
         n = 0
@@ -221,20 +227,26 @@ class Asprova2:
             self.Trend = 3 # ボーナス最大化傾向
             
         # cとdの分散を計算
-        ave_c = int(sum(self.C)/self.M)
+        self.ave_c = int(sum(self.C)/self.M)
         
         total_c = 0
         for c in self.C:
-            total_c += (c - ave_c)*(c - ave_c)
+            total_c += (c - self.ave_c)*(c - self.ave_c)
         self.bunsan_c = int(total_c/self.M)
         
         # cとdの分散を計算
-        ave_d = int(sum(self.D)/self.M)
+        self.ave_d = int(sum(self.D)/self.M)
         
         total_d = 0
         for d in self.D:
-            total_d += (d - ave_d)*(d - ave_d)
+            total_d += (d - self.ave_d)*(d - self.ave_d)
         self.bunsan_d = int(total_d/self.M)
+        
+        # 各オーダの製造個数の平均値
+        total_q = 0
+        for order in self.orders:
+            total_q += order.q
+        self.ave_q = int(total_q/self.R)
         
 
     def time(self, m, i, p):
@@ -249,7 +261,7 @@ class Asprova2:
                 return True
         return False
     
-    def selectMachine(self,i,p,num,ope):
+    def selectMachine(self,i,p,num,before,ope):
         
         maxm0 = -1
         maxtime0 = -99999999999
@@ -266,35 +278,36 @@ class Asprova2:
         minm3 = -1
         minnum3 = 99999999999
         
-        #段取り時間ペナルティ係数が極めて小さい場合、段取り時間を考慮しない
-        # 段取りのペナルティ自体はなくても他が煽りを受けそうだからなしか？
-        if(self.A1 > 10000000):
-            for bom in self.boms:
-                if(bom.i == i and bom.p == p):
-                    
-                    if(num[bom.m] == 0): #そのマシンにまだ一つのオーダも割り当てられていない場合
-                        return bom.m
-                    
-                    elif(maxtime0 < self.machinetime[bom.m] ):
-                        maxm0 = bom.m
-                        maxtime0 = self.machinetime[bom.m]
-            
-            return maxm0
-                    
-                    
-        else:
-            # BOMを順番に見ていく
-            for bom in self.boms:
-                if (bom.i == i and bom.p == p): # 対応できるBOMである
+        # bomをsortする
+        # 製造個数が多ければCが小さめ、製造個数が少なければCが大きめのマシンを選びやすくする
+        self.boms = sorted(self.boms, key = attrgetter("mworth"))
+        
+        if(ope.q > self.ave_q): # 要求数が多め
+            self.boms = sorted(self.boms, key = attrgetter("c"))
+        
+        else: # 少なめ
+            self.boms = sorted(self.boms, key = attrgetter("c"),reverse = True)
+        
+        esp_d2 = pow(self.ave_d * 2,self.B1) * self.A1
+        esp_d1 = pow(self.ave_d,self.B1) * self.A1
+        esp_c = pow(self.ave_c * self.ave_q,self.B2) * self.A2
+
+        # BOMを順番に見ていく
+        for bom in self.boms:
+            if (bom.i == i and bom.p == p): # 対応できるBOMである
                 
-                    if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
-                        return bom.m
-                    
-                    elif((abs(i - ope[bom.m].i)%3 == 0 or bom.d == 0) and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                
+                if(num[bom.m] == 0): # そのマシンにまだ一つのオーダも割り当てられていなものを優先
+                    return bom.m
+                 
+                # 発生しうる段取り時間が予測されるrun時間に比べて大きい
+                # 段取り時間は極力発生させない
+                if(esp_d1 > esp_c): 
+                    if((abs(i - before[bom.m].i)%3 == 0 or bom.d == 0) and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
                         maxtime1 = self.machinetime[bom.m]
                         minm1 = bom.m
                     
-                    elif(abs(i - ope[bom.m].i)%3 == 1 and maxtime2 < self.machinetime[bom.m]):
+                    elif(abs(i - before[bom.m].i)%3 == 1 and maxtime2 < self.machinetime[bom.m]):
                         maxtime2 = self.machinetime[bom.m]
                         minm2 = bom.m
                     
@@ -302,6 +315,23 @@ class Asprova2:
                         maxtime3 = self.machinetime[bom.m]
                         minm3 = bom.m
         
+                # 2段階の発生は抑えたい
+                elif(esp_d2 > esp_c):
+                    if((abs(i - before[bom.m].i)%3 != 2 or bom.d == 0) and maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                        maxtime1 = self.machinetime[bom.m]
+                        minm1 = bom.m
+                    
+                    elif(maxtime2 < self.machinetime[bom.m]):
+                        maxtime2 = self.machinetime[bom.m]
+                        minm2 = bom.m
+                
+                # 2段階とも発生してOK
+                else:
+                    if(maxtime1 < self.machinetime[bom.m]): # 割り当てられている場合、段取り時間が発生せず、なるべく少ないマシンを選択
+                        maxtime1 = self.machinetime[bom.m]
+                        minm1 = bom.m
+                    
+                
         if(minm1 != -1):
             return minm1
         elif(minm2 != -1):
@@ -317,9 +347,10 @@ class Asprova2:
         #cが小さいとe後の方が良い？
         
         if(self.bunsan_c <= 5000):
+            
             self.orders = sorted(self.orders, key=attrgetter('drest','e','r'),reverse = True)
         else:
-            self.orders = sorted(self.orders, key=attrgetter('e','drest','r'),reverse = True)
+            self.orders = sorted(self.orders, key=attrgetter('e','q','drest','r'),reverse = True)
         #else:
         
         
@@ -418,6 +449,7 @@ class Asprova2:
             # 利用可能な設備を見つける
             m = -1;
             
+            
             # マシンごとに見ていくのではなく、すべてのマシンを総当たりして
             # 望ましいマシンを探す
             
@@ -484,7 +516,8 @@ class Asprova2:
             
             """
             # 後ろからわりつける場合はここから
-            m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe)
+            m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe,order)
+            #print(m)
             
             if (m == -1):
                 continue
@@ -1093,8 +1126,9 @@ class Asprova2:
 
             pret = 0
             self.checkOver(ope,pret)
-        
-        
+
+            
+            
         # stendを更新する 
         # stendはオーダごとの値なので相関を見ていなかった
         """
@@ -1122,22 +1156,14 @@ class Asprova2:
         for ope in self.operations:
             if(ope.p == ope.order.p):
                 ope.order.delay = ope.t3 - ope.order.d
+        
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
-        self.operations = sorted(self.operations, key = attrgetter("m","t1"))
 
-        #ましんga 20台の時だけLCO読んでみる
-        #if(self.M == 20):
-        #self.lco()
-        
         for i in range(50):
             #self.forwardfill()
-
             
             self.backfill()
-            #if(self.M == 20):
-            #self.lco()
-                #print("****")
                 
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
@@ -1146,7 +1172,7 @@ class Asprova2:
         
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
-        # とりあえず4回くらいやってみる
+
         
         for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
@@ -1155,7 +1181,10 @@ class Asprova2:
                 #print("{}".format(ope.t3))
                 time = self.adjustStart(ope,999999)
 
+        # LCOで最適化（最適とはいってない）
         self.lco()
+ 
+ 
         
         if(self.A2 < self.A3 and self.B2< self.B3):
             for ope in self.operations:
