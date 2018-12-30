@@ -1012,7 +1012,11 @@ class Asprova2:
                 continue
  
             # beforeのみ最終工程、あるいはopeのみ1だと対象外
-            if(before.p == before.order.p or ope.order.p == 0):
+            if((ope.p != ope.order.p and before.p == before.order.p) or (ope.order.p == 0 and before.order.p != 0) ):
+                continue
+            
+            # どちらかが第一工程であれば対象外
+            if(ope.p == 0 or before.p == 0):
                 continue
             
             # 双方とも遅延していない場合は対象外
@@ -1030,6 +1034,7 @@ class Asprova2:
                 #if(before.machine_before != None and ope.machine_after != None):
                 #    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(before.machine_before.t3,before.t1,before.t3,ope.t1,ope.t3,ope.machine_after.t1))
                 """
+                #print("交換前:{}  交換後:{}".format((ope.order.d - ope.t3) + (before.order.d - before.t3) , (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) )))
                 # 時間の更新
                 tmp_t3 = ope.t3
                 
@@ -1058,10 +1063,12 @@ class Asprova2:
                 ope.machine_after = before
                 before.machine_before = ope
                 
-                #print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
-                #print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
-                #print("")
                 """
+                if(ope.dan != 0 or before.dan != 0):
+                    print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
+                    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
+                    print("")
+                
                 if(ope.t3 != before.t1):
                     print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
                     print("ERROR!!! ope.run {} , before.run{}".format(ope.run,before.run))
@@ -1120,33 +1127,35 @@ class Asprova2:
         self.operations = sorted(self.operations, key = attrgetter("m","t1"))
 
         #ましんga 20台の時だけLCO読んでみる
-        if(self.M == 20):
-            self.lco()
+        #if(self.M == 20):
+        #self.lco()
         
-        for i in range(10):
+        for i in range(50):
             #self.forwardfill()
 
             
             self.backfill()
-            if(self.M == 20):
-                self.lco()
+            #if(self.M == 20):
+            #self.lco()
+                #print("****")
                 
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
                 time = self.adjustDelay(ope,999999)
-        
 
-        #self.lco()
         
         # backfillでも空いてしまった隙間を
         # できるだけ後ろ方向に詰める
         # とりあえず4回くらいやってみる
+        
         for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
             #self.forwardfill()
             for ope in self.operations:
                 #print("{}".format(ope.t3))
                 time = self.adjustStart(ope,999999)
+
+        self.lco()
         
         if(self.A2 < self.A3 and self.B2< self.B3):
             for ope in self.operations:
