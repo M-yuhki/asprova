@@ -347,10 +347,10 @@ class Asprova2:
         #cが小さいとe後の方が良い？
         
         if(self.bunsan_c <= 5000):
-            
-            self.orders = sorted(self.orders, key=attrgetter('drest','e','r'),reverse = True)
+            #self.orders = sorted(self.orders, key=attrgetter('e'))
+            self.orders = sorted(self.orders, key=attrgetter('drest','e','d'),reverse = True)
         else:
-            self.orders = sorted(self.orders, key=attrgetter('e','q','drest','r'),reverse = True)
+            self.orders = sorted(self.orders, key=attrgetter('e','drest','d'),reverse = True)
         #else:
         
         
@@ -400,8 +400,9 @@ class Asprova2:
 
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
-        #self.orders = sorted(self.orders, key=attrgetter('lim'))
-        self.orders = sorted(self.orders, key=attrgetter('e','drest', 'r'),reverse = True)
+        self.orders = sorted(self.orders, key=attrgetter('e'))
+        self.orders = sorted(self.orders, key=attrgetter('drest','e', 'r'),reverse = True)
+        
         #for order in self.orders:
         #    print(vars(order))
         
@@ -443,7 +444,6 @@ class Asprova2:
             prest = order.prest;
             drest = order.drest;
             erest = order.erest;
-            #print(vars(order))
             
             #選ばれた注文の最後の工程から設備と時間を割り付けていく
             # 利用可能な設備を見つける
@@ -517,7 +517,6 @@ class Asprova2:
             """
             # 後ろからわりつける場合はここから
             m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe,order)
-            #print(m)
             
             if (m == -1):
                 continue
@@ -591,40 +590,7 @@ class Asprova2:
             if(ol == 0):
                 break
             # 後ろから探す場合ここまで
-            
-        
-     
-        """
-            # 各注文の最初の工程から設備と時間を割り付けていく : Assign operation from the first of each order to machine and time
-            for p in range(self.iToP[i]):
-                # 利用可能な設備を見つける : Find assignable resource
-                m = -1;
-                for m2 in range(self.M):
-                    # マシンを選択
-                    # BOMをsortしているので望ましいものから選ばれる
-                    if self.canMake(m2, i, p):
-                        m = m2
-                        break
-                if m == -1:
-                    continue
 
-                # 段取り開始時刻は、｛この注文の最早開始時刻、この工程の前の工程の製造終了時刻、この設備の前回の製造終了時刻｝の最大値
-    	        # Setup start time is max number of { Earliest start time of this order,
-          	    #                                  	  Manufacturing end time of the operation of previous process,
-            	#                                     Manufacturing end time of last assigend operation to this machine }
-                t1 = max(e, t3rp[r][p - 1] if p - 1 >= 0 else 0, mToPreviousT3[m])
-                t2 = t1
-                if mToPreviousI[m] != -1:
-                    # この設備を使うのが２回目以降なら、段取り時間を足す。 : Add setup time if this operation is not the first operation assigned to this machine.
-                    t2 += self.D[m] * (abs(i - mToPreviousI[m]) % 3)
-                t3 = t2 + self.C[m] * self.time(m, i, p) * q
-
-                self.operations.append(Operation(m, r, p, t1, t2, t3, i, order))
-
-                mToPreviousI[m] = i
-                mToPreviousT3[m] = t3
-                t3rp[r][p] = t3
-        """
     
     def checkOver(self,ope,pret3):
         if(ope.p == 0): # そのオーダの最初の工程なら最早時間も考慮する
@@ -688,7 +654,6 @@ class Asprova2:
             else:
                 time = min(time, ope.t1 - ope.order.e)
             
-            #print("ope.t1-before.t3:{}".format(ope.t1-before.t3))
         if(ope.machine_before != None):
             time = min(time, ope.t1 - ope.machine_before.t3)
         if(ope.order_before != None):
@@ -872,7 +837,6 @@ class Asprova2:
         
         # フラグの初期化
         for ope in self.operations:
-            #print(vars(ope))
             ope.backflg = False
         
         before_t3 = -1 # 直前の工程の完了時間
@@ -1014,61 +978,123 @@ class Asprova2:
                
     def lco(self): # 局所クラスタリング組織化法
         count = 0
-        # ope自身と1つ前の割り付けとの入れ替えを考える
+        # ope自身と前後の割り付けとの入れ替えを考える
         for ope in self.operations:
             
-            # 同一マシンの1つまえに割り付けられていなければ対象外
-            if(ope.machine_before == None):
+            # 同一マシンの前後に割り付けられていなければ対象外
+            if(ope.machine_before == None or ope.machine_after == None):
                 continue
             
             before = ope.machine_before
+            after = ope.machine_after
             
             # 段取り時間が変化しうる場合は対象外
-            if(ope.dan != 0 or before.dan != 0 ):
+            if(ope.dan != 0 or before.dan != 0 or after.dan != 0):
                 continue
-
+                
+            # ここから、opeとbeforeの交換の評価値
+            
             # それぞれの制限時間を、条件に基づき登録
             # opeの交換後の開始すべき時刻
             if(ope.order_before != None):
                 ope_start = ope.order_before.t3
             else:
                 ope_start = ope.order.e
- 
+                
             # beforeの交換後の終了すべき時刻
             if(before.order_after != None):
                 before_end = before.order_after.t1
             else:
-                before_end = ope.order.d
+                before_end = before.order.d
             
+            # beforeと交換した時の評価値
+            before_excvalue = (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) )
+            # 交換しない場合の評価値
+            before_value = (ope.order.d - ope.t3) + (before.order.d - before.t3)
+            
+            # continueの代わりに、excvalueを極めて小さくしておく
             # 交換後、それぞれの前後の時刻に干渉してしまうなら対象外
             if(before.t1 < ope_start or ope.t3 > before_end):
-                continue
+                before_execvalue = abs(before_value)*(-1000)
  
             # beforeのみ最終工程、あるいはopeのみ1だと対象外
-            if((ope.p != ope.order.p and before.p == before.order.p) or (ope.order.p == 0 and before.order.p != 0) ):
-                continue
+            if((ope.p != ope.order.p and before.p == before.order.p) or (ope.p == 0 and before.p != 0) ):
+                before_execvalue = abs(before_value)*(-1000)
             
             # どちらかが第一工程であれば対象外
             if(ope.p == 0 or before.p == 0):
-                continue
+                before_execvalue = abs(before_value)*(-1000)
+                
+            # 同一オーダだと対象外
+            if(ope.r == before.r):
+                before_execvalue = abs(before_value)*(-1000)
             
             # 双方とも遅延していない場合は対象外
             if(ope.order.delay <= 0 and before.order.delay <= 0):
+                before_execvalue = abs(before_value)*(-1000)
+
+    
+            # ここから、opeとafter交換の評価値
+            
+            # それぞれの制限時間を、条件に基づき登録
+            # afterの交換後の開始すべき時刻
+            if(after.order_before != None):
+                after_start = after.order_before.t3
+            else:
+                after_start = after.order.e
+ 
+            # opeの交換後の終了すべき時刻
+            if(ope.order_after != None):
+                ope_end = ope.order_after.t1
+            else:
+                ope_end = ope.order.d
+                
+            # beforeと交換した時の評価値
+            after_excvalue = (after.order.d - (ope.t1 + after.run) ) + (ope.order.d - (after.t3) )
+            # 交換しない場合の評価値
+            after_value = (after.order.d - after.t3) + (ope.order.d - ope.t3)
+            
+            # 交換後、それぞれの前後の時刻に干渉してしまうなら対象外
+            if(ope.t1 < after_start or after.t3 > ope_end):
+                after_excvalue = abs(after_value)*(-1000)
+ 
+            # opeのみ最終工程、あるいはafterのみ1だと対象外
+            if((after.p != after.order.p and ope.p == ope.order.p) or (after.p == 0 and ope.p != 0) ):
+                after_excvalue = abs(after_value)*(-1000)
+            
+            # どちらかが第一工程であれば対象外
+            if(after.p == 0 or ope.p == 0):
+                after_excvalue = abs(after_value)*(-1000)
+            
+            # 同一オーダだと対象外
+            if(after.r == ope.p):
+                after_excvalue = abs(after_value)*(-1000)
+            
+            
+            # 双方とも遅延していない場合は対象外
+            if(after.order.delay <= 0 and ope.order.delay <= 0):
+                after_excvalue = abs(after_value)*(-1000)
+
+
+
+            # いずれとも交換しない方が価値が良いならば、交換しない
+            if(before_value > before_excvalue and after_value > after_excvalue):
+
                 continue
     
-            # 交換した時の納期に対する時間がより良くなれば交換する
-            if( (ope.order.d - ope.t3) + (before.order.d - before.t3) < (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) ) ):
+            # beforeと交換する
+            elif( (before_excvalue - before_value) >= (after_excvalue - after_value) ):
+                
+                print("before　m{} r{} p{} and ope m{} r{} p{}".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
                 """
-                if(ope.order.e == 0 and before.order.e == 0):
-                    print(vars(ope.machine_before))
-                    print(vars(before.machine_after))
-                    print("{}<{} or {}>{}".format(before.t1 , ope_start , ope.t3 , before_end))
-                    print("{} {} {} {}".format((ope.order.d - ope.t3),(before.order.d - before.t3),(ope.order.d - (before.t1 + ope.run) ), (before.order.d - (ope.t3) )))
-                #if(before.machine_before != None and ope.machine_after != None):
-                #    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(before.machine_before.t3,before.t1,before.t3,ope.t1,ope.t3,ope.machine_after.t1))
+                if(True):
+                    if(ope.order_before != None):
+                        print(vars(ope.order_before))
+                    print(vars(ope))
+                    if(ope.order_after != None):
+                        print(vars(ope.order_after))
                 """
-                #print("交換前:{}  交換後:{}".format((ope.order.d - ope.t3) + (before.order.d - before.t3) , (ope.order.d - (before.t1 + ope.run) ) + (before.order.d - (ope.t3) )))
-                # 時間の更新
+                
                 tmp_t3 = ope.t3
                 
                 ope.t1 = before.t1
@@ -1095,21 +1121,37 @@ class Asprova2:
             
                 ope.machine_after = before
                 before.machine_before = ope
+
+            # afterと交換する
+            else:
+                #print("after　m{} r{} p{} and ope m{} r{} p{}".format(after.m+1,after.r+1,after.p+1,ope.m+1,ope.r+1,ope.p+1))
+                tmp_t3 = after.t3
                 
-                """
-                if(ope.dan != 0 or before.dan != 0):
-                    print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
-                    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
-                    print("")
+                after.t1 = ope.t1
+                after.t2 = after.t1
+                after.t3 = after.t2 + after.run
                 
-                if(ope.t3 != before.t1):
-                    print(">>>exchange! before:m{} r{} p{} ←→ ope: m{} r{} p:{}<<<".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
-                    print("ERROR!!! ope.run {} , before.run{}".format(ope.run,before.run))
-                    print("ERROR!!! ope.dan {} , before.dan{}".format(ope.dan,before.dan))
-                    print("bbt3:{}→bt1:{}→bt3:{}→t1:{}→t3:{}→at1:{}".format(ope.machine_before.t3,ope.t1,ope.t3,before.t1,before.t3,before.machine_after.t1))
-                    print("")
-                """
-                count += 1
+                ope.t3 = tmp_t3
+                ope.t2 = tmp_t3 - ope.run
+                ope.t1 = ope.t2
+                
+                
+                # ポインタのつなぎ変え
+                if(after.machine_after != None):
+                    after.machine_after.machine_before = ope
+                    ope.machine_after = after.machine_after
+                else:
+                    ope.machine_after = None
+                
+                if(ope.machine_before != None):
+                    ope.machine_before.machine_after = after
+                    after.machine_before = ope.machine_before
+                else:
+                    after.machine_before = None
+            
+                after.machine_after = ope
+                ope.machine_before = after
+
                 
         
     def checkResult(self): #依存関係を元に時間を調整する
@@ -1176,11 +1218,10 @@ class Asprova2:
         
         for i in range(10):
             self.operations = sorted(self.operations, key = attrgetter("t3"), reverse = True)
-            #self.forwardfill()
             for ope in self.operations:
-                #print("{}".format(ope.t3))
                 time = self.adjustStart(ope,999999)
 
+        self.operations = sorted(self.operations, key = attrgetter("m","t3"), reverse = True)
         # LCOで最適化（最適とはいってない）
         self.lco()
  
@@ -1205,7 +1246,7 @@ class Asprova2:
             #brank[operation.m] = operation.t1 - k
         #print(brank)
         
-        """
+        
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -1227,7 +1268,7 @@ class Asprova2:
                 s = operation.t3
             else:
                 if(operation.t1 - s < 0):
-                    print("ERROR!  O:m {} r {} p {} t1{}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
+                    print("ERROR! O>>>m:{} r:{} p:{} t1:{} t3:{}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1,operation.t3))
                 s = operation.t3
         
         # 各マシン内でのエラーチェック
@@ -1239,10 +1280,10 @@ class Asprova2:
                 s = operation.t3
             else:
                 if(operation.t1 - s < 0):
-                    print("ERROR!  M:m {} r {} p {} t1 {}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
+                    print("ERROR! M>>>m:{} r:{} p:{} t1:{}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
         
-        """
+        
         
     def run(self):
         self.readProblem()
