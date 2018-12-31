@@ -10,6 +10,8 @@ import fileinput
 import statistics
 import operator
 from operator import itemgetter, attrgetter
+import random
+import time
 
 
 class Order:
@@ -130,6 +132,13 @@ class Asprova2:
         self.orders = []
         self.operations = []
         
+        self.eva_best = 10000
+        self.operations_now = []
+        self.route = []
+        
+        # ノード空間
+        self.order_p = []
+        
         # スケジューリングで重視する傾向
         self.Trend = -1
         
@@ -247,6 +256,12 @@ class Asprova2:
         for order in self.orders:
             total_q += order.q
         self.ave_q = int(total_q/self.R)
+        
+        self.order_p = [1 for i in range(self.R)]
+        
+        self.route = [0 for i in range(self.R)]
+        
+        self.prate = [10000 for i in range(self.R)]
         
 
     def time(self, m, i, p):
@@ -376,7 +391,184 @@ class Asprova2:
         for operation in self.operations:
             if(operation.r == r and operation.p == p):
                 return operation
+       
+    # aoc用のオーダ選択アルゴリズム       
+    def selectOrderant(self):
+
+        num = 0
+        s = 0
+        for j in range(self.R):
+            s += self.prate[j]
+            if random.randrange(s) < self.prate[j]:
+                n = j
+
+
+        while True:
+            
+            for order in self.orders:
+                if(n == order.r and order.prest  != -1):
+                    self.route[n] += 1
+                    return order
+                elif(n == order.r and order.prest == -1):
+                    self.route[n] += 1 
+                    n += 1
+                    break
+            
+            if(n == self.R):
+                n = 0
+        
+        return -1
+
+    def searchOpeant(self,r,p):
+        
+        for operation in self.operations_now:
+            if(operation.r == r and operation.p == p):
+                return operation
+
+
+    def solveant(self):
+        # 各設備の直後の製造開始時刻 : Previous manufacturing end time of each machine
+        #mToPreviousT3 = [0 for m in range(self.M)]
+        mToPreviousT1 = [0 for m in range(self.M)]
+        mToPreviousT3 = [0 for m in range(self.M)]
+        # 各設備の直後の品目: Previous item of each machine
+        mToPreviousI = [-1 for m in range(self.M)]
+        # 各設備の直後のジョブを参照するために登録
+        mToPreviousOpe = [-1 for m in range(self.M)]
+        # 各注文の各工程の製造終了時刻 : Manufacturing end time of each process of each order
+        t3rp = [[-1 for p in range(self.iToP[self.orders[r].i])] for r in range(self.R)]
+        # 各設備に割り当てられたオーダの数
+        mToNumorder = [0 for m in range(self.M)]
+        
+        
+        # 工程の総数
+        ol = 0
+        for i in t3rp:
+            ol += len(i)
+
+        # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
+        # 納期が遅い→limitが少ないの順
+        self.orders = sorted(self.orders, key=attrgetter('r'))
+        
+        #self.boms = sorted(self.boms, key = attrgetter("c","d"))
+        self.boms = sorted(self.boms, key = attrgetter("mworth"))
+        
+        # オーダを1つずつ処理していくのではなく各工程毎に処理
+        for i in range(2):
+
+            #mToPreviousT3 = [0 for m in range(self.M)]
+            mToPreviousT1 = [0 for m in range(self.M)]
+            mToPreviousT3 = [0 for m in range(self.M)]
+            # 各設備の直後の品目: Previous item of each machine
+            mToPreviousI = [-1 for m in range(self.M)]
+            # 各設備の直後のジョブを参照するために登録
+            mToPreviousOpe = [-1 for m in range(self.M)]
+            # 各注文の各工程の製造終了時刻 : Manufacturing end time of each process of each order
+            t3rp = [[-1 for p in range(self.iToP[self.orders[r].i])] for r in range(self.R)]
+            # 各設備に割り当てられたオーダの数
+            mToNumorder = [0 for m in range(self.M)]
+            
+            self.route = [0 for i in range(self.R)]
+            self.operations_now = []
+            while True:
+                
+                order = self.selectOrderant()
+                r = order.r;
+                i = order.i;
+                e = order.e;
+                d = order.d;
+                q = order.q;
+                p = order.p;
+                prest = order.prest;
+                drest = order.drest;
+                erest = order.erest;
+                m = -1;
     
+                # 後ろからわりつける場合はここから
+                m = self.selectMachine(i,prest,mToNumorder,mToPreviousOpe,order)
+                
+                if (m == -1):
+                    continue
+                
+                if(mToPreviousI[m] == -1): #そのマシンにオーダが割り付けられていない場合
+                    t3 = order.drest
+                    dantime = 0
+                
+                else: # そのマシンにオーダが割り付けられている場合
+                    #発生しうる段取り時間
+                    dantime = self.D[m] * (abs(i - mToPreviousI[m])%3)
+                
+                    # 段取り終了時刻は{そのオーダの納期、直後の工程の製造開始時刻+段取り時間}の最小値
+                    t3 = min(order.drest, mToPreviousT1[m]-dantime)
+                
+                # t2はt3から実行時間を引いたもの
+                t2 = t3 - self.C[m] * self.time(m, i, order.prest) * q
+                
+                # 段取り開始時刻はあとから計算するためt1=t2
+                t1 = t2
+                
+                # orderを追加
+                ope = Operation(m, r, order.prest, t1, t2, t3, i, order,self.C[m],self.D[m], self.mnum[m])
+                self.operations_now.append(ope)
+                
+                # 既にそのマシンに工程がわりあてられていたら、そのオーダのパラメータを更新
+                if(mToPreviousI[m] != -1):
+                    mToPreviousOpe[m].t1 -= dantime # t1に段取り時間を追加
+                    mToPreviousOpe[m].order.drest  -= dantime # drestから段取り時間を引く
+    
+                    mToPreviousOpe[m].dan = dantime
+                    mToPreviousOpe[m].order.dflg = True # dflgをTrueにする
+                    
+                    # 依存関係の登録
+                    # そのマシンの次のオーダ
+                    ope.machine_after = mToPreviousOpe[m]
+                    mToPreviousOpe[m].machine_before = ope
+                
+                # 依存関係の登録
+                # その品目の次の工程
+                if(order.prest != order.p):
+                    tar = self.searchOpeant(r,order.prest+1)
+                    ope.order_after = tar
+                    tar.order_before = ope
+    
+                mToNumorder[m] += 1
+                self.machinetime[m] = t1
+                
+    
+                order.drest = t1
+                order.lim = drest - e
+                order.prest -= 1
+                
+                order.dflg = False
+    
+                mToPreviousT1[m] = t1
+                mToPreviousI[m] = i
+                mToPreviousOpe[m] = ope
+    
+                ol -= 1
+                if(ol == 0):
+                    break
+
+            # 比較
+            eva = 0
+            for ope in self.operations_now:
+                if(ope.p == ope.order.p):
+                    eva += ope.order.d - ope.t3
+                elif(ope.p == 0):
+                    eva += ope.order.e - ope.t1
+                
+                if(self.eva_best == 10000):
+                    self.eva_best = eva
+                    self.operations = self.operations_now
+        
+                elif(self.eva_best < eva):
+                    self.eva_best = eva
+                    self.operations = self.operations_now
+            
+            #フェロモンの更新
+            for j in range(len(self.prate)):
+                self.prate[j] = int(self.prate[j]*0.9 + self.route[j]*(eva/self.eva_best))
+        
 
     def solve(self):
         # 各設備の直後の製造開始時刻 : Previous manufacturing end time of each machine
@@ -397,6 +589,8 @@ class Asprova2:
         ol = 0
         for i in t3rp:
             ol += len(i)
+
+        
 
         # 注文を納期が遅い順に並べ替える : Sort orders by earliest start time
         # 納期が遅い→limitが少ないの順
@@ -428,13 +622,13 @@ class Asprova2:
         #self.boms = sorted(self.boms, key = attrgetter("c","d"))
         self.boms = sorted(self.boms, key = attrgetter("mworth"))
         
-        
         # オーダを1つずつ処理していくのではなく各工程毎に処理
         while True:
             # selectOrder関数を新たに作成
             #order = self.orders[j]
             
             order = self.selectOrder()
+            #order = self.selectOrderant()
             r = order.r;
             i = order.i;
             e = order.e;
@@ -589,6 +783,8 @@ class Asprova2:
             ol -= 1
             if(ol == 0):
                 break
+        
+        
             # 後ろから探す場合ここまで
 
     
@@ -1137,7 +1333,6 @@ class Asprova2:
             # afterと交換する
             
             elif( (before_excvalue - before_value) < (after_excvalue - after_value) ):
-
                     
                     
                 tmp_t3 = after.t3
@@ -1216,15 +1411,19 @@ class Asprova2:
         #backfillで間を埋める
         # backfillは、後ろのジョブを前に出す
 
-        for i in range(50):
+        for i in range(100):
             #self.forwardfill()
             
             self.backfill()
+            
+            self.operations = sorted(self.operations, key = attrgetter("m","t3"),reverse = True)
             self.lco()
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
                 time = self.adjustDelay(ope,999999)
 
+        
+        
         self.lco()
         
         for i in range(10):
