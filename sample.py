@@ -979,7 +979,9 @@ class Asprova2:
     def lco(self): # 局所クラスタリング組織化法
         count = 0
         # ope自身と前後の割り付けとの入れ替えを考える
-        for ope in self.operations:
+        #for ope in self.operations:
+        for j in range(len(self.operations)):
+            ope = self.operations[j]
             
             # 同一マシンの前後に割り付けられていなければ対象外
             if(ope.machine_before == None or ope.machine_after == None):
@@ -1015,23 +1017,23 @@ class Asprova2:
             # continueの代わりに、excvalueを極めて小さくしておく
             # 交換後、それぞれの前後の時刻に干渉してしまうなら対象外
             if(before.t1 < ope_start or ope.t3 > before_end):
-                before_execvalue = abs(before_value)*(-1000)
+                before_excvalue = abs(before_value)*(-1000)
  
             # beforeのみ最終工程、あるいはopeのみ1だと対象外
             if((ope.p != ope.order.p and before.p == before.order.p) or (ope.p == 0 and before.p != 0) ):
-                before_execvalue = abs(before_value)*(-1000)
+                before_excvalue = abs(before_value)*(-1000)
             
             # どちらかが第一工程であれば対象外
             if(ope.p == 0 or before.p == 0):
-                before_execvalue = abs(before_value)*(-1000)
+                before_excvalue = abs(before_value)*(-1000)
                 
             # 同一オーダだと対象外
             if(ope.r == before.r):
-                before_execvalue = abs(before_value)*(-1000)
+                before_excvalue = abs(before_value)*(-1000)
             
             # 双方とも遅延していない場合は対象外
             if(ope.order.delay <= 0 and before.order.delay <= 0):
-                before_execvalue = abs(before_value)*(-1000)
+                before_excvalue = abs(before_value)*(-1000)
 
     
             # ここから、opeとafter交換の評価値
@@ -1049,7 +1051,7 @@ class Asprova2:
             else:
                 ope_end = ope.order.d
                 
-            # beforeと交換した時の評価値
+            # afterと交換した時の評価値
             after_excvalue = (after.order.d - (ope.t1 + after.run) ) + (ope.order.d - (after.t3) )
             # 交換しない場合の評価値
             after_value = (after.order.d - after.t3) + (ope.order.d - ope.t3)
@@ -1075,25 +1077,18 @@ class Asprova2:
             if(after.order.delay <= 0 and ope.order.delay <= 0):
                 after_excvalue = abs(after_value)*(-1000)
 
-
-
+            
             # いずれとも交換しない方が価値が良いならば、交換しない
             if(before_value > before_excvalue and after_value > after_excvalue):
-
                 continue
-    
+
+            
             # beforeと交換する
             elif( (before_excvalue - before_value) >= (after_excvalue - after_value) ):
                 
-                print("before　m{} r{} p{} and ope m{} r{} p{}".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
-                """
-                if(True):
-                    if(ope.order_before != None):
-                        print(vars(ope.order_before))
-                    print(vars(ope))
-                    if(ope.order_after != None):
-                        print(vars(ope.order_after))
-                """
+                #print("before　m{} r{} p{} and ope m{} r{} p{}".format(before.m+1,before.r+1,before.p+1,ope.m+1,ope.r+1,ope.p+1))
+                
+                
                 
                 tmp_t3 = ope.t3
                 
@@ -1121,9 +1116,11 @@ class Asprova2:
             
                 ope.machine_after = before
                 before.machine_before = ope
-
+            
+            
             # afterと交換する
-            else:
+            
+            elif( (before_excvalue - before_value) <= (after_excvalue - after_value) ):
                 #print("after　m{} r{} p{} and ope m{} r{} p{}".format(after.m+1,after.r+1,after.p+1,ope.m+1,ope.r+1,ope.p+1))
                 tmp_t3 = after.t3
                 
@@ -1151,7 +1148,7 @@ class Asprova2:
             
                 after.machine_after = ope
                 ope.machine_before = after
-
+            
                 
         
     def checkResult(self): #依存関係を元に時間を調整する
@@ -1206,14 +1203,10 @@ class Asprova2:
             #self.forwardfill()
             
             self.backfill()
-                
+            self.lco()
             self.operations = sorted(self.operations, key = attrgetter("t3"))
             for ope in self.operations:
                 time = self.adjustDelay(ope,999999)
-
-        
-        # backfillでも空いてしまった隙間を
-        # できるだけ後ろ方向に詰める
 
         
         for i in range(10):
@@ -1221,9 +1214,8 @@ class Asprova2:
             for ope in self.operations:
                 time = self.adjustStart(ope,999999)
 
-        self.operations = sorted(self.operations, key = attrgetter("m","t3"), reverse = True)
-        # LCOで最適化（最適とはいってない）
-        self.lco()
+
+
  
  
         
@@ -1243,10 +1235,11 @@ class Asprova2:
         
         for operation in self.operations:
             print("{} {} {} {} {} {}".format((operation.m + 1), (operation.r + 1), (operation.p + 1), operation.t1, operation.t2, operation.t3))
+ 
             #brank[operation.m] = operation.t1 - k
         #print(brank)
         
-        
+        """
         # 総遅延時間のチェック
         j = 0
         k = 0
@@ -1282,7 +1275,7 @@ class Asprova2:
                 if(operation.t1 - s < 0):
                     print("ERROR! M>>>m:{} r:{} p:{} t1:{}".format(operation.m+1,operation.r+1,operation.p+1,operation.t1))
                 s = operation.t3
-        
+        """
         
         
     def run(self):
