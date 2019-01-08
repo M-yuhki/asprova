@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <bitset>
 #include <complex>
+
 class Order {
 public:
     int r;	/** オーダ番号    : Order number */
